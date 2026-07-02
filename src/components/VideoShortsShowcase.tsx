@@ -16,7 +16,7 @@ import {
   Activity
 } from "lucide-react";
 
-import uploadedVideo from "../assets/images/0918(1)_1_1.mp4";
+import uploadedVideo from "../assets/vedio/0918(1)_1_٢.mp4";
 
 interface ShortVideo {
   id: string;
