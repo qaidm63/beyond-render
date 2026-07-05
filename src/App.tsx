@@ -34,7 +34,7 @@ import ScrollToTop from "./components/ScrollToTop";
 import CVModal from "./components/CVModal";
 import VideoShortsShowcase from "./components/VideoShortsShowcase";
 
-import HERO_PORTRAIT from "./assets/images/185258.png";
+const HERO_PORTRAIT = "https://ik.imagekit.io/roqyvrhrw/_185258.webp";
 
 // Reusable scroll reveal component to provide VIP animation feel on all sections
 function RevealSection({ children, id, className = "" }: { children: ReactNode; id?: string; className?: string }) {

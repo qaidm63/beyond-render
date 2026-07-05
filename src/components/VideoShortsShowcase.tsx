@@ -53,12 +53,28 @@ const SHORT_VIDEOS: ShortVideo[] = [
     tagsAr: ["استدامة بيئية حقيقية", "أحمال حرارية مثالية", "تصميم بيئي رائد", "حماية الطاقة والاستثمار"],
     tagsEn: ["True Eco Sustainability", "Thermal Load Audit", "Eco-Active Facades", "Secure Investment Value"],
     duration: "0:20"
+  },
+  {
+    id: "v1-cinematic-render",
+    url: "https://ik.imagekit.io/roqyvrhrw/Render%20HD_%D9%A1_%D9%A1_%D9%A1.mp4?updatedAt=1783203937419",
+    poster: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80",
+    titleAr: "الإخراج السينمائي الفخم عالي الجودة وتجسيد الفراغات بدقة مذهلة",
+    titleEn: "Luxurious High-Quality Cinematic Rendering & Spatial Articulation",
+    categoryAr: "الإخراج السينمائي الفخم",
+    categoryEn: "Cinematic Luxury Rendering",
+    descAr: "تقنيات إخراج سينمائي فخم عالي الجودة (HD Cinematic Rendering) وبدقة مذهلة تجسد إبداع وخبرة المهندس الاستشاري محمد الحذيفي. يتم محاكاة حركة الكاميرات الانسيابية، التفاعل الفيزيائي للخامات الفاخرة كالمعادن والمواد الحجرية، وتوزيع الإضاءة الواقعية والظلال على الأسطح لإبراز جمالية التصميم المعماري الداخلي والخارجي، مما يعزز ثقة الزائر في تفرد واحترافية العمل الهندسي المبتكر.",
+    descEn: "A magnificent display of high-definition cinematic luxury rendering (HD Rendering) showcasing the deep artistic sensibilities and professional engineering caliber of Eng. Mohammed Al-Hothaifi. Dynamic camera animation, realistic global illumination, physics-based materials, and precise environmental shadows coalesce to breathe life into spatial aesthetics, solidifying client confidence in bespoke luxury architecture.",
+    icon: <Building className="w-4 h-4 text-gold-400" />,
+    tagsAr: ["إخراج سينمائي فخم", "رندر عالي الدقة HD", "محاكاة واقعية مذهلة", "فخامة هندسية متكاملة"],
+    tagsEn: ["Cinematic Luxury Render", "Ultra HD Precision", "Realistic Lighting", "Bespoke Architecture"],
+    duration: "0:15"
   }
 ];
 
 export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) {
   const isRtl = lang === "ar";
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState(1); // 1 for next/right, -1 for prev/left
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -70,33 +86,58 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
 
   const currentVideo = SHORT_VIDEOS[currentIndex];
 
-  // Auto-slide effect to the right (next index) every 7 seconds
+  const handleNext = () => {
+    setDirection(1);
+    setCurrentIndex((prevIndex) => (prevIndex + 1) % SHORT_VIDEOS.length);
+  };
+
+  const handlePrev = () => {
+    setDirection(-1);
+    setCurrentIndex((prevIndex) => (prevIndex - 1 + SHORT_VIDEOS.length) % SHORT_VIDEOS.length);
+  };
+
+  // Fallback auto-slide effect to change index after 15 seconds if paused or idle
   useEffect(() => {
     if (SHORT_VIDEOS.length <= 1) return;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    intervalRef.current = setInterval(() => {
-      handleNext();
-    }, 7000);
+    if (!isPlaying) {
+      intervalRef.current = setInterval(() => {
+        handleNext();
+      }, 15000);
+    }
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [currentIndex]);
+  }, [currentIndex, isPlaying]);
 
   // Restart video playback when index changes
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.load();
       if (isPlaying) {
-        videoRef.current.play().catch(() => {
-          // Fallback if browser blocks automatic play
-          setIsPlaying(false);
-        });
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // Autoplay blocks fallback
+            if (videoRef.current) {
+              videoRef.current.muted = true;
+              setIsMuted(true);
+              videoRef.current.play().catch(() => {
+                setIsPlaying(false);
+              });
+            }
+          });
+        }
+      } else {
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {});
       }
     }
     setProgress(0);
@@ -111,22 +152,16 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
     }
   };
 
-  const handleNext = () => {
-    setCurrentIndex((prevIndex) => (prevIndex + 1) % SHORT_VIDEOS.length);
-  };
-
-  const handlePrev = () => {
-    setCurrentIndex((prevIndex) => (prevIndex - 1 + SHORT_VIDEOS.length) % SHORT_VIDEOS.length);
-  };
-
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {});
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -165,6 +200,25 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
     };
   }, []);
 
+  // Slide transitions for theater display
+  const slideVariants = {
+    enter: (dir: number) => ({
+      x: dir > 0 ? "100%" : "-100%",
+      opacity: 0,
+      scale: 0.98
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+      scale: 1
+    },
+    exit: (dir: number) => ({
+      x: dir > 0 ? "-100%" : "100%",
+      opacity: 0,
+      scale: 0.98
+    })
+  };
+
   return (
     <div 
       id="video-shorts-showcase-section" 
@@ -194,7 +248,10 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
               <button
                 key={`indicator-${lang}-${vid.id}`}
                 id={`btn-video-indicator-${vid.id}`}
-                onClick={() => setCurrentIndex(idx)}
+                onClick={() => {
+                  setDirection(idx > currentIndex ? 1 : -1);
+                  setCurrentIndex(idx);
+                }}
                 className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                   currentIndex === idx ? "w-6 bg-gold-400" : "w-2 bg-zinc-700 hover:bg-zinc-600"
                 }`}
@@ -213,22 +270,42 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
         {/* Video Player Section: Occupies 8 cols on lg screens, fully responsive wide screen theater container */}
         <div className="lg:col-span-8 col-span-12 flex justify-center items-center w-full">
           <div className="relative w-full aspect-video rounded-3xl overflow-hidden border border-zinc-700/80 bg-zinc-950 shadow-[0_20px_50px_rgba(0,0,0,0.8)] group transition-all duration-350 hover:border-gold-500/50">
-            {/* Video Feed */}
-            <video
-              ref={videoRef}
-              src={currentVideo.url}
-              poster={currentVideo.poster}
-              loop
-              muted={isMuted}
-              onTimeUpdate={handleTimeUpdate}
-              onClick={togglePlay}
-              playsInline
-              preload="auto"
-              className="w-full h-full object-contain cursor-pointer bg-black"
+            {/* Ambient Blurred Background matching current video's poster */}
+            <img
+              src={currentVideo.poster}
+              alt="الخلفية المضببة"
+              className="absolute inset-0 w-full h-full object-cover filter blur-3xl opacity-25 pointer-events-none transition-all duration-700"
             />
 
+            {/* Video Feed Wrapper for Framer Motion sliding transitions */}
+            <AnimatePresence initial={false} custom={direction} mode="wait">
+              <motion.video
+                key={`video-${currentIndex}`}
+                ref={videoRef}
+                src={currentVideo.url}
+                poster={currentVideo.poster}
+                autoPlay={isPlaying}
+                muted={isMuted}
+                onTimeUpdate={handleTimeUpdate}
+                onEnded={handleNext}
+                onClick={togglePlay}
+                playsInline
+                preload="auto"
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{
+                  x: { type: "spring", stiffness: 260, damping: 26 },
+                  opacity: { duration: 0.35 }
+                }}
+                className="w-full h-full object-contain cursor-pointer bg-black/90 absolute inset-0"
+              />
+            </AnimatePresence>
+
             {/* Dark glass shadow vignette overlay for status icons */}
-            <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/85 via-black/10 to-transparent p-3 sm:p-4 flex justify-between items-center pointer-events-none">
+            <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/85 via-black/10 to-transparent p-3 sm:p-4 flex justify-between items-center pointer-events-none z-20">
               <div className={`flex items-center gap-1.5 bg-black/75 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full border border-zinc-900/80 ${isRtl ? "flex-row-reverse" : "flex-row"}`}>
                 {currentVideo.icon}
                 <span className="text-[10px] sm:text-xs font-mono text-white tracking-wider truncate max-w-[120px] xs:max-w-[180px] sm:max-w-none">
@@ -243,7 +320,7 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
             {/* Center Play/Pause Floating Overlay Icon (visible briefly on hover or when paused) */}
             <div 
               onClick={togglePlay}
-              className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-all duration-300 ${isPlaying ? "opacity-0 group-hover:opacity-100" : "opacity-100 placeholder:bg-black/40"}`}
+              className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-all duration-300 z-20 ${isPlaying ? "opacity-0 group-hover:opacity-100" : "opacity-100 placeholder:bg-black/40"}`}
             >
               <button 
                 id="btn-video-center-control"
@@ -254,14 +331,14 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
             </div>
 
             {/* Bottom HUD Overlay for Video Controls */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent p-3 sm:p-5 space-y-2 sm:space-y-3">
-              {/* Dynamic Title on Video for Theater Mode (hidden on mobile screen as it is perfectly shown right below the video player) */}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent p-3 sm:p-5 space-y-2 sm:space-y-3 z-20">
+              {/* Dynamic Title on Video for Theater Mode */}
               <div className={`hidden sm:block space-y-1 ${isRtl ? "text-right" : "text-left"}`}>
                 <h5 className="text-xs sm:text-sm font-semibold text-white leading-tight font-sans line-clamp-1">
                   {isRtl ? currentVideo.titleAr : currentVideo.titleEn}
                 </h5>
                 <span className="text-[10px] font-mono text-gold-400 block tracking-wide font-bold">
-                  ENG. MOHAMMED AL-HOTHAIFI • {isRtl ? "العمارة البيئية المستدامة" : "ECOLOGICAL SUSTAINABLE ARCHITECTURE"}
+                  ENG. MOHAMMED AL-HOTHAIFI • {isRtl ? currentVideo.categoryAr : currentVideo.categoryEn}
                 </span>
               </div>
 
