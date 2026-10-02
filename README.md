@@ -60,6 +60,8 @@ API docs: `http://localhost:8000/api/docs`
 - [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md) — phased plan
 - [`docs/PHASE_2_OPERATIONS.md`](docs/PHASE_2_OPERATIONS.md) — schema, ingestion, sweeps
 - [`docs/PHASE_3_OPERATIONS.md`](docs/PHASE_3_OPERATIONS.md) — auth model, Command Center
+- [`docs/COMMAND_CENTER_GUIDE.md`](docs/COMMAND_CENTER_GUIDE.md) — running the
+  dashboard locally, the protected route, operator login, and error triage
 - [`docs/PHASE_4_OPERATIONS.md`](docs/PHASE_4_OPERATIONS.md) — Tailor & Analyst agents,
   Telegram gateway, periodic scheduler, and their guard rails
 
