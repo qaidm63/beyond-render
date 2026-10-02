@@ -16,7 +16,12 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
-from .config import GEMINI_MODEL
+from .config import (
+    AMD_MODEL_ANALYST,
+    AMD_MODEL_TAILOR,
+    AMD_MODEL_VISION,
+    GEMINI_MODEL,
+)
 from .secrets import get_secret, require_secret
 
 logger = logging.getLogger("shadow-matrix.llm")
@@ -37,6 +42,10 @@ class LLMProvider(Protocol):
 
     def generate(self, prompt: str, *, system: str | None = None) -> str:
         """Return completion text for ``prompt``."""
+        ...
+
+    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+        """Async form. Blocking providers implement it via a worker thread."""
         ...
 
 
@@ -108,6 +117,12 @@ class GeminiLLMProvider:
             raise LLMError("Gemini returned an empty completion.")
         return text
 
+    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+        """httpx here is blocking; keep the event loop free."""
+        import asyncio
+
+        return await asyncio.to_thread(self.generate, prompt, system=system)
+
 
 # ---------------------------------------------------------------- #
 # Offline provider                                                  #
@@ -136,28 +151,56 @@ class TemplateLLMProvider:
             raise LLMError("Refusing to render an empty prompt.")
         return f"{self.MARKER}\n\n{prompt.strip()}"
 
+    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+        return self.generate(prompt, system=system)
+
 
 # ---------------------------------------------------------------- #
 # Selection                                                         #
 # ---------------------------------------------------------------- #
 
 
-def get_llm_provider(offline: bool = False) -> LLMProvider:
-    """
-    Resolve the active provider.
+# Which model each agent gets. Blueprint Phase 4 assignment.
+ROLE_MODELS: dict[str, str | None] = {
+    "vision": AMD_MODEL_VISION,
+    "analyst": AMD_MODEL_ANALYST,
+    "tailor": AMD_MODEL_TAILOR,
+}
 
-    Falls back to the offline template provider only when explicitly requested
-    or when no Gemini key is configured — and says so loudly in the logs.
+
+def get_llm_provider(
+    offline: bool = False,
+    role: str = "tailor",
+) -> LLMProvider:
+    """
+    Resolve the active provider for an agent role.
+
+    Order of preference:
+      1. AMD Radeon Cloud when `AMD_API_KEYS` is set — the rotating pool is
+         the primary path, and each role gets its assigned model.
+      2. Gemini when `GEMINI_API_KEY` is set.
+      3. The offline template provider, loudly.
+
+    `role` must be one of ROLE_MODELS; an unknown role falls back to the
+    tailor model rather than silently picking nothing.
     """
     if offline:
         logger.warning("Using OFFLINE template generation — not a language model.")
         return TemplateLLMProvider()
 
-    if get_secret("GEMINI_API_KEY") is None:
-        logger.warning(
-            "GEMINI_API_KEY is not set; falling back to offline template "
-            "generation. Cover letters will need manual rewriting."
-        )
-        return TemplateLLMProvider()
+    # Imported here: core.amd imports core.secrets, and a module-level import
+    # would make the dependency cycle load-order sensitive.
+    from .amd import AMDChatProvider, available as amd_available
 
-    return GeminiLLMProvider()
+    if amd_available():
+        model = ROLE_MODELS.get(role) or AMD_MODEL_TAILOR or "DeepSeek-V4-Flash-0731"
+        return AMDChatProvider(model)
+
+    if get_secret("GEMINI_API_KEY") is not None:
+        return GeminiLLMProvider()
+
+    logger.warning(
+        "No AMD or Gemini credentials configured; falling back to offline "
+        "template generation. Cover letters will need manual rewriting."
+    )
+    return TemplateLLMProvider()

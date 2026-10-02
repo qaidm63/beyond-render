@@ -73,6 +73,15 @@ SECRET_INVENTORY: tuple[SecretSpec, ...] = (
         "Public origin recruiters reach, used to build absolute VIP links",
         required=False,
     ),
+    SecretSpec("AMD_BASE_URL", "AMD Radeon Cloud OpenAI-compatible base URL", required=False),
+    SecretSpec(
+        "AMD_API_KEYS",
+        "Comma-separated AMD Radeon Cloud keys, rotated round-robin",
+        required=False,
+    ),
+    SecretSpec("AMD_MODEL_VISION", "Model id for DOM/vision extraction", required=False),
+    SecretSpec("AMD_MODEL_ANALYST", "Model id for the relevance pre-filter", required=False),
+    SecretSpec("AMD_MODEL_TAILOR", "Model id for cover-letter generation", required=False),
     SecretSpec(
         "SWEEP_INTERVAL_MINUTES",
         "Periodic sweep interval; 0 or unset disables the scheduler",

@@ -17,7 +17,9 @@ defers to the operator. There is no automated recovery path by design.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote_plus
@@ -29,6 +31,7 @@ from backend.agents.scout.normalise import (
     slugify,
 )
 from backend.core.config import SearchConfiguration
+from backend.core.llm import get_llm_provider
 from backend.core.schemas import JobOpportunity, ScoutEngine
 from backend.core.secrets import cookies_available, load_browser_cookies
 
@@ -107,6 +110,65 @@ def _normalise_cookies(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return cleaned
 
 
+# Rendered text we hand the model when the selectors come up empty. Enough to
+# cover a results page; far below the model's context so cost stays bounded.
+MODEL_EXTRACT_CHAR_LIMIT = 12000
+
+EXTRACT_SYSTEM = (
+    "You extract job postings from the rendered text of a careers page. "
+    "Reply with ONLY a JSON array, no prose and no code fence. Each element: "
+    '{"title": str, "company": str, "location": str|null, "url": str|null}. '
+    "Copy values verbatim from the text. If the text contains no job "
+    "postings, reply with []."
+)
+
+_JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
+
+
+async def extract_with_model(page_text: str, source_url: str) -> list[dict]:
+    """
+    Model-assisted extraction for pages the CSS selectors cannot read.
+
+    This is the Vision & DOM engine's last resort (Blueprint § 4, Layer 2):
+    portals restyle constantly and a selector that silently matches nothing is
+    indistinguishable from a portal with no vacancies. Asking the model to read
+    the rendered text recovers those pages.
+
+    **Fails closed, quietly**: any error returns an empty list. A broken
+    fallback must not crash a sweep that already has results from Layer 1.
+    """
+    if not page_text or not page_text.strip():
+        return []
+
+    llm = get_llm_provider(role="vision")
+    prompt = (
+        f"Source page: {source_url}\n\n"
+        f"Rendered text:\n{page_text[:MODEL_EXTRACT_CHAR_LIMIT]}"
+    )
+
+    try:
+        raw = await llm.agenerate(prompt, system=EXTRACT_SYSTEM)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Model-assisted extraction failed: %s", exc)
+        return []
+
+    # Models wrap JSON in fences or commentary despite instructions.
+    match = _JSON_ARRAY_RE.search(raw)
+    if not match:
+        logger.warning("Model-assisted extraction returned no JSON array.")
+        return []
+
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        logger.warning("Model-assisted extraction returned invalid JSON: %s", exc)
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+    return [item for item in parsed if isinstance(item, dict)]
+
+
 async def _harvest(
     page: Any,
     term: str,
@@ -149,6 +211,16 @@ async def _harvest(
         }
         """
     )
+
+    if not cards:
+        # Selectors matched nothing: either the portal restyled or there are
+        # genuinely no results. Let the vision model read the page and decide.
+        logger.info("No cards matched selectors; trying model-assisted extraction.")
+        try:
+            page_text = await page.evaluate("() => document.body.innerText")
+        except Exception:  # noqa: BLE001
+            page_text = ""
+        cards = await extract_with_model(page_text, page.url)
 
     harvested: list[JobOpportunity] = []
     for card in cards[:MAX_CARDS_PER_TERM]:

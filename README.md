@@ -7,7 +7,8 @@ tailored pitch pages per company.
 Built to `Shadow_Matrix_Final_Blueprint` — see
 [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md).
 
-**Status: Phase 4 complete** (foundation · swarm & pgvector · Command Center · agents, alerts & scheduling).
+**Status: Phase 4 complete** (foundation · swarm & pgvector · Command Center ·
+agents, alerts & scheduling · rotating multi-key LLM pool).
 
 ## Architecture
 

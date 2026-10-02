@@ -154,6 +154,28 @@ export interface DraftResponse {
  */
 export type ScheduledRunResult = Partial<SweepReport> & { error?: string };
 
+export interface KeyHealth {
+  /** Masked, e.g. `rc-abc…1234`. Never the full credential. */
+  label: string;
+  state: 'open' | 'closed';
+  cooldownRemaining: number;
+  tripCount: number;
+  successCount: number;
+  failureCount: number;
+  lastError: string | null;
+}
+
+export interface KeyringState {
+  configured: boolean;
+  detail?: string;
+  total?: number;
+  available?: number;
+  cooldownSeconds?: number;
+  baseUrl?: string;
+  keys?: KeyHealth[];
+  models?: { vision: string; analyst: string; tailor: string };
+}
+
 export interface SchedulerState {
   enabled: boolean;
   intervalMinutes: number;
@@ -241,6 +263,7 @@ export const api = {
     }),
 
   scheduler: () => request<SchedulerState>('/scheduler'),
+  keyring: () => request<KeyringState>('/keyring'),
   runScheduledSweep: () =>
     request<ScheduledRunResult>('/scheduler/run', { method: 'POST' }),
   testAlert: () =>

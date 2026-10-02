@@ -6,12 +6,14 @@ import {
   Clock,
   Send,
   Radar as RadarIcon,
+  KeyRound,
 } from 'lucide-react';
 import {
   api,
   ApiError,
   type IngestReport,
   type SchedulerState,
+  type KeyringState,
 } from '@/lib/api';
 
 /** Telemetry — Blueprint § 5.4: match stats and recruiter clicks. */
@@ -36,6 +38,7 @@ export default function Telemetry() {
   const [sweeping, setSweeping] = useState(false);
   const [alerting, setAlerting] = useState(false);
   const [opsNotice, setOpsNotice] = useState<string | null>(null);
+  const [keyring, setKeyring] = useState<KeyringState | null>(null);
 
   useEffect(() => {
     api
@@ -48,6 +51,7 @@ export default function Telemetry() {
 
     // Scheduler state is supplementary: its failure must not blank the page.
     api.scheduler().then(setScheduler).catch(() => setScheduler(null));
+    api.keyring().then(setKeyring).catch(() => setKeyring(null));
   }, []);
 
   async function runSweep() {
@@ -248,6 +252,74 @@ export default function Telemetry() {
 
         {opsNotice && (
           <p className="text-[11px] text-sky-200/90 leading-relaxed">{opsNotice}</p>
+        )}
+      </div>
+
+      <div className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+            <KeyRound className="w-3.5 h-3.5" />
+            Model key pool
+          </h3>
+          <button
+            onClick={() => void api.keyring().then(setKeyring).catch(() => {})}
+            className="text-[11px] text-zinc-500 hover:text-amber-400"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {!keyring ? (
+          <p className="text-[11px] text-zinc-600">Unavailable.</p>
+        ) : !keyring.configured ? (
+          <p className="text-[11px] text-zinc-600 leading-relaxed">
+            {keyring.detail ?? 'No rotating keys configured.'}
+          </p>
+        ) : (
+          <>
+            <p className="text-[11px] font-mono text-zinc-500">
+              {keyring.available}/{keyring.total} available · cooldown{' '}
+              {keyring.cooldownSeconds}s
+            </p>
+
+            <ul className="space-y-1.5">
+              {keyring.keys?.map((key) => (
+                <li
+                  key={key.label}
+                  className="flex items-center justify-between gap-3 text-[11px] font-mono border border-zinc-900 rounded-lg px-3 py-2"
+                >
+                  <span className="text-zinc-400">{key.label}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="text-zinc-600">
+                      ✓{key.successCount} ✕{key.failureCount}
+                    </span>
+                    <span
+                      className={
+                        key.state === 'closed'
+                          ? 'text-emerald-400'
+                          : 'text-amber-400'
+                      }
+                    >
+                      {key.state === 'closed'
+                        ? 'healthy'
+                        : `isolated ${key.cooldownRemaining}s`}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {keyring.models && (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono pt-1">
+                <span className="text-zinc-600">Vision / DOM</span>
+                <span className="text-zinc-400">{keyring.models.vision}</span>
+                <span className="text-zinc-600">Analyst filter</span>
+                <span className="text-zinc-400">{keyring.models.analyst}</span>
+                <span className="text-zinc-600">Tailor</span>
+                <span className="text-zinc-400">{keyring.models.tailor}</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>

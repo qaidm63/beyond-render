@@ -192,7 +192,7 @@ async def compose(
     Returns an **unapproved** pitch. Persisting and publishing are separate,
     operator-driven steps.
     """
-    llm = llm or get_llm_provider()
+    llm = llm or get_llm_provider(role="tailor")
 
     projects = await asyncio.to_thread(
         select_featured_projects,
@@ -203,10 +203,9 @@ async def compose(
     )
     prompt = build_prompt(job, projects)
 
-    # httpx here is blocking; keep the event loop free for the API.
-    letter = await asyncio.to_thread(
-        llm.generate, prompt, system=SYSTEM_INSTRUCTION
-    )
+    # Async-native providers (AMD) rotate keys internally; blocking ones
+    # implement agenerate() on a worker thread. Either way the loop is free.
+    letter = await llm.agenerate(prompt, system=SYSTEM_INSTRUCTION)
 
     return Pitch(
         companyId=job.companyId,

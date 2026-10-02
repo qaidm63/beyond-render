@@ -183,7 +183,7 @@ def explain_match(
     demand for a single job the operator is inspecting, never across a whole
     sweep, because it costs an LLM call per invocation.
     """
-    llm = llm or get_llm_provider()
+    llm = llm or get_llm_provider(role="analyst")
 
     by_id = {p.projectId: p for p in load_portfolio()}
     project = by_id.get(job.bestProjectId or "")
@@ -214,3 +214,36 @@ def explain_match(
         ]
     )
     return llm.generate(prompt, system=RATIONALE_SYSTEM)
+
+
+PREFILTER_SYSTEM = (
+    "You screen job postings for a consultant architect. Answer with exactly "
+    "one word: RELEVANT if the posting is an architecture, interior design, "
+    "BIM, urban planning or construction-supervision role; IRRELEVANT "
+    "otherwise. No punctuation, no explanation."
+)
+
+
+async def prefilter(
+    job: JobOpportunity,
+    *,
+    llm: LLMProvider | None = None,
+) -> bool:
+    """
+    Cheap structural sanity check before the expensive embedding call.
+
+    Runs on the small fast model. **Fails open**: any error, timeout or
+    unparseable answer returns True so the job proceeds to vector scoring.
+    A flaky pre-filter must never silently delete opportunities — the
+    embedding gate remains the authority on what is actually discarded.
+    """
+    llm = llm or get_llm_provider(role="analyst")
+    try:
+        verdict = await llm.agenerate(
+            job.to_matching_document()[:1200], system=PREFILTER_SYSTEM
+        )
+    except Exception as exc:  # noqa: BLE001 - fail open, never drop a job
+        logger.warning("Pre-filter unavailable for '%s': %s", job.title, exc)
+        return True
+
+    return "IRRELEVANT" not in verdict.strip().upper()

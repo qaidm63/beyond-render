@@ -25,6 +25,7 @@ Operator only (Supabase Auth, allowlisted):
   GET   /api/scheduler          periodic sweep state
   POST  /api/scheduler/run      trigger a scheduled-style sweep now
   POST  /api/ops/test-alert     verify the Telegram gateway
+  GET   /api/keyring            AMD key pool health (masked)
 
 Run with:
     uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -48,6 +49,9 @@ from backend.core import repository
 from backend.core.auth import Operator, auth_configured, current_operator
 from backend.core.config import (
     ALLOWED_ORIGINS,
+    AMD_MODEL_ANALYST,
+    AMD_MODEL_TAILOR,
+    AMD_MODEL_VISION,
     APP_NAME,
     APP_VERSION,
     DEFAULT_SEARCH_CONFIGURATION,
@@ -92,6 +96,19 @@ async def validate_environment() -> None:
             "Operator auth not configured — /matrix-admin stays sealed. "
             "Set SUPABASE_JWKS_URL and ADMIN_EMAILS."
         )
+
+    from backend.core import amd as amd_module
+
+    if amd_module.available():
+        logger.info(
+            "AMD key pool: %s key(s) · vision=%s analyst=%s tailor=%s",
+            len(amd_module.configured_keys()),
+            AMD_MODEL_VISION,
+            AMD_MODEL_ANALYST,
+            AMD_MODEL_TAILOR,
+        )
+    else:
+        logger.info("AMD_API_KEYS not set; using Gemini or offline fallback.")
 
     if not ops.configured():
         logger.info("Telegram gateway not configured; alerts will be skipped.")
@@ -503,6 +520,36 @@ async def draft_pitch(
 # ---------------------------------------------------------------- #
 
 
+@app.get("/api/keyring")
+async def keyring_state(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """
+    Health of the rotating AMD key pool.
+
+    Keys are masked (`rc-abc…1234`) so the operator can identify a misbehaving
+    credential without the dashboard becoming a place credentials leak.
+    """
+    from backend.core import amd as amd_module
+
+    if not amd_module.available():
+        return {
+            "configured": False,
+            "detail": "AMD_API_KEYS is not set; the LLM path falls back to "
+            "Gemini or offline templates.",
+        }
+
+    snapshot = amd_module.get_keyring().snapshot()
+    snapshot["configured"] = True
+    snapshot["baseUrl"] = amd_module.base_url()
+    snapshot["models"] = {
+        "vision": AMD_MODEL_VISION,
+        "analyst": AMD_MODEL_ANALYST,
+        "tailor": AMD_MODEL_TAILOR,
+    }
+    return snapshot
+
+
 @app.get("/api/scheduler")
 async def scheduler_state(
     _operator: Operator = Depends(current_operator),
@@ -531,6 +578,19 @@ async def test_alert(
     _operator: Operator = Depends(current_operator),
 ) -> dict[str, object]:
     """Send a probe message so the operator can verify the Telegram wiring."""
+    from backend.core import amd as amd_module
+
+    if amd_module.available():
+        logger.info(
+            "AMD key pool: %s key(s) · vision=%s analyst=%s tailor=%s",
+            len(amd_module.configured_keys()),
+            AMD_MODEL_VISION,
+            AMD_MODEL_ANALYST,
+            AMD_MODEL_TAILOR,
+        )
+    else:
+        logger.info("AMD_API_KEYS not set; using Gemini or offline fallback.")
+
     if not ops.configured():
         raise HTTPException(
             status_code=503,

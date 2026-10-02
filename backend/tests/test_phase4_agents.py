@@ -15,6 +15,7 @@ import pytest
 
 from backend import pipeline, scheduler
 from backend.agents import analyst, ops, tailor
+from backend.core import amd as amd_module
 from backend.core import llm as llm_module
 from backend.core.embeddings import HashingEmbeddingProvider
 from backend.core.llm import (
@@ -43,6 +44,9 @@ class FakeLLM:
         self.systems.append(system)
         return self.reply
 
+    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+        return self.generate(prompt, system=system)
+
 
 class ExplodingLLM:
     name = "exploding:test"
@@ -50,6 +54,18 @@ class ExplodingLLM:
 
     def generate(self, prompt: str, *, system: str | None = None) -> str:
         raise LLMError("upstream exploded")
+
+    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+        return self.generate(prompt, system=system)
+
+
+@pytest.fixture
+def no_amd(monkeypatch):
+    """Remove AMD credentials so provider-precedence tests see Gemini/offline."""
+    monkeypatch.delenv("AMD_API_KEYS", raising=False)
+    amd_module.reset_keyring()
+    yield
+    amd_module.reset_keyring()
 
 
 @pytest.fixture
@@ -243,12 +259,12 @@ def test_offline_provider_rejects_empty_prompt():
         TemplateLLMProvider().generate("   ")
 
 
-def test_get_llm_provider_falls_back_without_key(monkeypatch):
+def test_get_llm_provider_falls_back_without_key(monkeypatch, no_amd):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert isinstance(get_llm_provider(), TemplateLLMProvider)
 
 
-def test_get_llm_provider_uses_gemini_with_key(monkeypatch):
+def test_get_llm_provider_uses_gemini_with_key(monkeypatch, no_amd):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     assert isinstance(get_llm_provider(), GeminiLLMProvider)
 

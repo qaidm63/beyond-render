@@ -28,6 +28,25 @@ GEMINI_EMBEDDING_MODEL = get_secret("GEMINI_EMBEDDING_MODEL", "text-embedding-00
 # Phase 2 must declare exactly this width.
 EMBEDDING_DIMENSIONS = 768
 
+# ---------------------------------------------------------------- #
+# AMD Radeon Cloud — per-agent model assignment                     #
+# ---------------------------------------------------------------- #
+# OpenAI-compatible Token Factory endpoint. Keys rotate through
+# `core/keyring.py`; see `core/amd.py`.
+#
+# The catalogue is a live beta and model ids rotate, so each is an override-
+# able env var rather than a constant: a renamed model must be fixable in
+# .env, not in a release.
+
+# Vision / complex page extraction — scout/dom_engine.py
+AMD_MODEL_VISION = get_secret("AMD_MODEL_VISION", "Qwen3.8-27B")
+
+# Fast relevance pre-filter — agents/analyst.py
+AMD_MODEL_ANALYST = get_secret("AMD_MODEL_ANALYST", "MiniCPM5-2B")
+
+# Cover letters and VIP content — agents/tailor.py
+AMD_MODEL_TAILOR = get_secret("AMD_MODEL_TAILOR", "DeepSeek-V4-Flash-0731")
+
 # Origins allowed to call this API. The frontend normally reaches the backend
 # through a same-origin proxy, so this stays narrow.
 ALLOWED_ORIGINS = [
