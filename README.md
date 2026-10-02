@@ -36,19 +36,21 @@ backend/    Python 3.11 + FastAPI  (agent swarm)
 **Prerequisites:** Node.js 20+, Python 3.11+
 
 ```bash
-# 1. Secrets
-cp .env.example .env     # then fill in real values
+# 1. Secrets (once)
+cp .env.example .env               # fill in real values
+#    frontend/.env.local needs the two public VITE_* values
 
-# 2. Backend
-python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
+# 2. Install everything
+./scripts/bootstrap.sh
+
+# 3. Run (two terminals)
 .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-
-# 3. Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev              # http://localhost:5173, proxies /api -> :8000
+cd frontend && npm run dev         # http://localhost:5173, proxies /api -> :8000
 ```
+
+`scripts/bootstrap.sh` rebuilds the virtualenv and `node_modules` and reports
+any missing env file. None of those are tracked in git — dependencies are
+reproducible, and env files hold secrets.
 
 API docs: `http://localhost:8000/api/docs`
 
