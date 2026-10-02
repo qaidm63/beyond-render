@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Loader2, AlertTriangle, Link2, Check, X, Copy } from 'lucide-react';
+import {
+  Loader2,
+  AlertTriangle,
+  Link2,
+  Check,
+  X,
+  Copy,
+  Pencil,
+  Save,
+  Undo2,
+} from 'lucide-react';
 import { api, ApiError, type PitchRow } from '@/lib/api';
 
 /** Dynamic Pitch Studio — Blueprint § 5.3. */
@@ -9,6 +19,9 @@ export default function PitchStudio() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftText, setDraftText] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -41,6 +54,50 @@ export default function PitchStudio() {
     }
   }
 
+  function startEditing(pitch: PitchRow) {
+    setEditingId(pitch.company_id);
+    setDraftText(pitch.cover_letter);
+    setError(null);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setDraftText('');
+  }
+
+  async function saveLetter(pitch: PitchRow) {
+    setSaving(true);
+    setError(null);
+    try {
+      // Upsert preserves the existing approval state: editing the text of a
+      // live pitch must not silently unpublish it, nor publish a draft.
+      const updated = await api.upsertPitch({
+        companyId: pitch.company_id,
+        companyName: pitch.company_name,
+        jobId: pitch.job_id ?? undefined,
+        coverLetter: draftText,
+        featuredProjectIds: pitch.featured_project_ids,
+        approved: pitch.approved,
+      });
+      setPitches((cur) =>
+        cur.map((p) =>
+          p.company_id === pitch.company_id
+            ? { ...p, cover_letter: updated.cover_letter ?? draftText }
+            : p,
+        ),
+      );
+      cancelEditing();
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? `Could not save: ${err.message}`
+          : 'Could not save the letter.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function copyLink(companyId: string) {
     const url = `${window.location.origin}/vip/${companyId}`;
     void navigator.clipboard?.writeText(url);
@@ -53,8 +110,8 @@ export default function PitchStudio() {
       <header>
         <h2 className="text-white font-semibold">Dynamic Pitch Studio</h2>
         <p className="text-xs text-zinc-500">
-          Review cover letters and mint VIP links. Unapproved pitches return 404
-          publicly — a draft can never leak.
+          Review, edit and approve cover letters, then mint VIP links.
+          Unapproved pitches return 404 publicly — a draft can never leak.
         </p>
       </header>
 
@@ -101,10 +158,52 @@ export default function PitchStudio() {
                 </span>
               </div>
 
-              {pitch.cover_letter && (
-                <p className="text-xs text-zinc-500 leading-relaxed line-clamp-4 whitespace-pre-line">
-                  {pitch.cover_letter}
-                </p>
+              {editingId === pitch.company_id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={draftText}
+                    onChange={(e) => setDraftText(e.target.value)}
+                    rows={14}
+                    spellCheck
+                    className="w-full bg-black/50 border border-zinc-700 focus:border-amber-500/60 rounded-lg p-3 text-xs text-zinc-300 leading-relaxed font-sans outline-none resize-y"
+                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => void saveLetter(pitch)}
+                      disabled={saving || !draftText.trim()}
+                      className="text-xs flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
+                    >
+                      {saving ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      Save letter
+                    </button>
+                    <button
+                      onClick={cancelEditing}
+                      disabled={saving}
+                      className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" /> Discard changes
+                    </button>
+                    <span className="text-[10px] font-mono text-zinc-700 ml-auto">
+                      {draftText.length} chars
+                    </span>
+                  </div>
+                  {pitch.approved && (
+                    <p className="text-[10px] text-amber-400/70">
+                      This pitch is live — saving updates what recruiters see
+                      immediately.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                pitch.cover_letter && (
+                  <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-line max-h-64 overflow-y-auto border-l-2 border-zinc-900 pl-3">
+                    {pitch.cover_letter}
+                  </p>
+                )
               )}
 
               <div className="flex flex-wrap gap-2">
@@ -132,6 +231,13 @@ export default function PitchStudio() {
                       <Check className="w-3.5 h-3.5" /> Approve &amp; publish
                     </>
                   )}
+                </button>
+                <button
+                  onClick={() => startEditing(pitch)}
+                  disabled={editingId === pitch.company_id}
+                  className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit letter
                 </button>
                 <button
                   onClick={() => copyLink(pitch.company_id)}
