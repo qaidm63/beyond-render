@@ -5,7 +5,7 @@ Blueprint § 3.a.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -83,18 +83,39 @@ class PipelineStage(str, Enum):
 
 
 class JobOpportunity(BaseModel):
-    id: str
+    """A single scouted posting as it travels through the swarm."""
+
+    # Stable cross-run identity, computed by the scout (see scout.fingerprint).
+    fingerprint: str
     title: str
     company: str
     companyId: str
-    location: str | None = None
     url: str
     source: str
     engine: ScoutEngine
+    id: str | None = None
+    location: str | None = None
     description: str | None = None
+    contractType: str | None = None
+    isRemote: bool | None = None
+    # Populated by the Analyst Agent (Layer 3).
     fitScore: float | None = None
+    bestProjectId: str | None = None
+    rejectionReason: str | None = None
     stage: PipelineStage = PipelineStage.DISCOVERED
-    discoveredAt: datetime
+    postedAt: datetime | None = None
+    discoveredAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_matching_document(self) -> str:
+        """Flatten the posting into the text embedded for gatekeeping."""
+        parts = [f"Job title: {self.title}", f"Company: {self.company}"]
+        if self.location:
+            parts.append(f"Location: {self.location}")
+        if self.contractType:
+            parts.append(f"Contract: {self.contractType}")
+        if self.description:
+            parts.append(f"Description: {self.description}")
+        return "\n".join(parts)
 
 
 class Pitch(BaseModel):

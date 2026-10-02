@@ -90,18 +90,26 @@ export type PipelineStage =
   | 'applied';
 
 export interface JobOpportunity {
-  id: string;
+  /** Stable cross-run identity: sha256 of the posting URL. */
+  fingerprint: string;
   title: string;
   company: string;
   companyId: string;
-  location: string | null;
   url: string;
   source: string;
   engine: ScoutEngine;
-  description: string | null;
+  id?: string | null;
+  location?: string | null;
+  description?: string | null;
+  contractType?: string | null;
+  isRemote?: boolean | null;
   /** 0–100. Produced by the Analyst Agent via pgvector similarity. */
-  fitScore: number | null;
+  fitScore?: number | null;
+  /** Which portfolio project matched best — drives Radar explainability. */
+  bestProjectId?: string | null;
+  rejectionReason?: string | null;
   stage: PipelineStage;
+  postedAt?: string | null;
   discoveredAt: string;
 }
 

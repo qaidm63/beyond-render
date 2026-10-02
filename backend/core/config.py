@@ -18,7 +18,7 @@ from .secrets import get_secret
 # ---------------------------------------------------------------- #
 
 APP_NAME = "Shadow Matrix Backend"
-APP_VERSION = "1.0.0-phase1"
+APP_VERSION = "1.0.0-phase2"
 
 # Gemini models. Supplied by the operator; defaults match the project brief.
 GEMINI_MODEL = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
