@@ -7,6 +7,8 @@
 --   psql "$DATABASE_URL" -f backend/db/schema.sql
 --
 -- EMBEDDING WIDTH: vector(768) matches Gemini `text-embedding-004`.
+-- Operator-confirmed. Must stay in lockstep with EMBEDDING_DIMENSIONS in
+-- backend/core/config.py; changing either alone corrupts every score.
 -- Changing the model means changing this width AND re-embedding everything.
 -- ============================================================
 

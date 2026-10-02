@@ -24,8 +24,15 @@ APP_VERSION = "1.0.0-phase4"
 GEMINI_MODEL = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
 GEMINI_EMBEDDING_MODEL = get_secret("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
 
-# Dimensionality of `text-embedding-004`. The pgvector column created in
-# Phase 2 must declare exactly this width.
+# Dimensionality of `text-embedding-004`. CONFIRMED BY THE OPERATOR.
+#
+# This number is load-bearing in three places that must change together:
+#   1. here,
+#   2. `vector(768)` in backend/db/schema.sql (column + match function),
+#   3. the stored vectors themselves.
+# Changing the embedding model without re-embedding the whole corpus produces
+# silently meaningless similarity scores rather than an error, so
+# GeminiEmbeddingProvider refuses any response whose width differs from this.
 EMBEDDING_DIMENSIONS = 768
 
 # ---------------------------------------------------------------- #
