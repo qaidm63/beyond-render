@@ -23,16 +23,15 @@ import {
   Smartphone,
   FileText
 } from "lucide-react";
-import { motion, AnimatePresence, useScroll, useTransform } from "motion/react";
-import ProjectShowcase from "./components/ProjectShowcase";
-import InteractiveBlueprint from "./InteractiveBlueprint";
-import AIAssistant from "./components/AIAssistant";
-import AnimatedCounter from "./components/AnimatedCounter";
-import { APP_TRANSLATIONS, CV_TIMELINE_TRANSLATED, STRENGTHS_TRANSLATED } from "./translations";
-import ContactFormModal from "./components/ContactFormModal";
-import ScrollToTop from "./components/ScrollToTop";
-import CVModal from "./components/CVModal";
-import VideoShortsShowcase from "./components/VideoShortsShowcase";
+import { motion, AnimatePresence, useScroll, useTransform, type Variants } from "motion/react";
+import ProjectShowcase from "@/components/ProjectShowcase";
+import InteractiveBlueprint from "@/components/InteractiveBlueprint";
+import AnimatedCounter from "@/components/AnimatedCounter";
+import { APP_TRANSLATIONS, CV_TIMELINE_TRANSLATED, STRENGTHS_TRANSLATED } from "@/translations";
+import ContactFormModal from "@/components/ContactFormModal";
+import ScrollToTop from "@/components/ScrollToTop";
+import CVModal from "@/components/CVModal";
+import VideoShortsShowcase from "@/components/VideoShortsShowcase";
 
 const HERO_PORTRAIT = "https://ik.imagekit.io/roqyvrhrw/_185258.webp";
 
@@ -52,7 +51,7 @@ function RevealSection({ children, id, className = "" }: { children: ReactNode; 
   );
 }
 
-export default function App() {
+export default function PublicPortfolio() {
   const [lang, setLang] = useState<"ar" | "en">("en");
   const [activeSection, setActiveSection] = useState("hero");
   const [selectedSubSkill, setSelectedSubSkill] = useState<string>("bim");
@@ -81,7 +80,6 @@ export default function App() {
     { id: "skills", label: t.navSkills },
     { id: "projects", label: t.navProjects },
     { id: "blueprint", label: t.navBlueprint },
-    { id: "ai-interview", label: t.navInterview },
     { id: "resume", label: t.navResume }
   ];
 
@@ -137,7 +135,7 @@ export default function App() {
     },
   };
 
-  const heroItemVariants = {
+  const heroItemVariants: Variants = {
     hidden: { opacity: 0, y: 16 },
     visible: {
       opacity: 1,
@@ -364,11 +362,11 @@ export default function App() {
               className={`flex gap-4 pt-4 flex-wrap ${isRtl ? "justify-end" : "justify-start"}`}
             >
               <a
-                id="cta-hero-chat"
-                href="#ai-interview"
+                id="cta-hero-projects"
+                href="#projects"
                 className="px-6 py-3.5 rounded-xl bg-gradient-to-tr from-[#13151d] to-[#1d202b] hover:from-gold-500 hover:to-gold-400 border border-gold-500/20 text-white hover:text-black font-semibold text-xs sm:text-sm transition-all duration-300 shadow-md cursor-pointer flex items-center gap-2"
               >
-                <span>{t.btnStartInterview}</span>
+                <span>{t.navProjects}</span>
                 <Sparkles className="w-4 h-4 animate-pulse shrink-0" />
               </a>
 
@@ -554,26 +552,6 @@ export default function App() {
         <InteractiveBlueprint lang={lang} />
 
       </RevealSection>
-
-      {/* AI Interview Bot Screen */}
-      <RevealSection id="ai-interview" className="py-20 bg-black/40 border-t border-b border-zinc-900 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto space-y-12">
-          
-          <div className="text-center space-y-3">
-            <span className="text-xs text-gold-400 font-mono uppercase tracking-widest block">{t.aiBadge}</span>
-            <h3 className="font-display font-extrabold text-2xl sm:text-4xl text-white">{t.aiTitle}</h3>
-            <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl mx-auto font-sans">
-              {t.aiDesc}
-            </p>
-          </div>
-
-          <div className="max-w-4xl mx-auto">
-            <AIAssistant lang={lang} />
-          </div>
-
-        </div>
-      </RevealSection>
-
       {/* Professional CV Timeline & Career Walk */}
       <RevealSection id="resume" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         

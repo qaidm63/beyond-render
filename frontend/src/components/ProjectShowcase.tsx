@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { FolderGit2, Calendar, MapPin, Minimize2, ArrowUpRight, Cpu, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Project } from "../types";
-import { PROJECTS_TRANSLATED, APP_TRANSLATIONS } from "../translations";
+import { Project } from "@/types";
+import { PROJECTS_TRANSLATED, APP_TRANSLATIONS } from "@/translations";
 
 export default function ProjectShowcase({ lang, onContactClick }: { lang: "ar" | "en"; onContactClick?: () => void }) {
   const [activeTab, setActiveTab] = useState<string>("all");

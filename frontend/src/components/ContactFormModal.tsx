@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Send, User, Mail, Clipboard, CheckCircle2, BookmarkCheck, Newspaper, AlertCircle } from "lucide-react";
-import { APP_TRANSLATIONS } from "../translations";
+import { APP_TRANSLATIONS } from "@/translations";
 
 interface ContactFormModalProps {
   isOpen: boolean;

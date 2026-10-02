@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowUp } from "lucide-react";
-import { APP_TRANSLATIONS } from "../translations";
+import { APP_TRANSLATIONS } from "@/translations";
 
 interface ScrollToTopProps {
   lang: "ar" | "en";

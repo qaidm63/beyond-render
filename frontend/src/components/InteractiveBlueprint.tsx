@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Layers, Rotate3d, Compass, Maximize2, Zap, LayoutGrid, Info, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { BlueprintRoom } from "./types";
-import { APP_TRANSLATIONS } from "./translations";
+import { BlueprintRoom } from "@/types";
+import { APP_TRANSLATIONS } from "@/translations";
 
 interface BilingualBlueprintRoom extends BlueprintRoom {
   englishDetails?: string;

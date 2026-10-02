@@ -1,20 +1,62 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Shadow Matrix & Smart Portfolio
 
-# Run and deploy your AI Studio app
+A hybrid system: a dynamic architectural portfolio fronting an autonomous
+recruitment agent that discovers roles, scores them semantically, and generates
+tailored pitch pages per company.
 
-This contains everything you need to run your app locally.
+Built to `Shadow_Matrix_Final_Blueprint` — see
+[`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md).
 
-View your app in AI Studio: https://ai.studio/apps/d86f3a13-cd36-4b5a-858a-a83cd9e0c722
+**Status: Phase 1 complete** (foundation cleanup & scaffolding).
 
-## Run Locally
+## Architecture
 
-**Prerequisites:**  Node.js
+```
+frontend/   React 19 + TypeScript + Vite + Tailwind 4
+backend/    Python 3.11 + FastAPI  (agent swarm)
+            Supabase (PostgreSQL + pgvector)
+```
 
+### Routes
+| Path | Audience | Status |
+|---|---|---|
+| `/` | Public visitors | Live |
+| `/vip/:companyId` | Recruiters (dynamic pitch) | Scaffold — data in Phase 3 |
+| `/matrix-admin` | Operator (Command Center) | Sealed — auth in Phase 3 |
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### The Swarm (Blueprint § 4)
+1. **XHR / GraphQL Engine** (~80%) — direct JSON interception on open gateways.
+2. **Vision & DOM Engine** (~20%) — Playwright fallback for anti-bot platforms,
+   using an operator-supplied `backend/cookies.json`.
+3. **Semantic Gatekeeper** — pgvector similarity against portfolio embeddings;
+   anything under `matchingThreshold` is discarded before it reaches the UI.
+
+## Running locally
+
+**Prerequisites:** Node.js 20+, Python 3.11+
+
+```bash
+# 1. Secrets
+cp .env.example .env     # then fill in real values
+
+# 2. Backend
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 3. Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev              # http://localhost:5173, proxies /api -> :8000
+```
+
+API docs: `http://localhost:8000/api/docs`
+
+## Security
+
+- `.env` and `backend/cookies.json` are git-ignored and must never be committed.
+- The Supabase **secret/service key is server-side only** and never reaches the browser.
+- The browser calls relative `/api/*` paths; Vite (dev) or the reverse proxy
+  (prod) forwards them to FastAPI.
+- No automated login, no 2FA bypass, no fabricated credentials. Browser sessions
+  are exported manually by the system operator.
