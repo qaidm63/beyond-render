@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 
 import uploadedVideo from "../assets/vedio/0918(1)_1_٢.mp4";
+import posterSustainability from "../assets/images/urban_park_landscape_1781638089681.jpg";
+import posterCinematic from "../assets/images/commercial_glass_hub_1781638071950.jpg";
 
 interface ShortVideo {
   id: string;
@@ -42,7 +44,7 @@ const SHORT_VIDEOS: ShortVideo[] = [
   {
     id: "v0-uploaded-showcase",
     url: uploadedVideo,
-    poster: "https://images.unsplash.com/photo-16200585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80",
+    poster: posterSustainability,
     titleAr: "الاستدامة البيئية واستراتيجيات العمارة الخضراء المعاصرة للمهندس محمد الحذيفي",
     titleEn: "Environmental Sustainability & Modern Green Building Strategies by Eng. Mohammed Al-Hothaifi",
     categoryAr: "العمارة المستدامة والصديقة للبيئة",
@@ -57,7 +59,7 @@ const SHORT_VIDEOS: ShortVideo[] = [
   {
     id: "v1-cinematic-render",
     url: "https://ik.imagekit.io/roqyvrhrw/Render%20HD_%D9%A1_%D9%A1_%D9%A1.mp4?updatedAt=1783203937419",
-    poster: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80",
+    poster: posterCinematic,
     titleAr: "الإخراج السينمائي الفخم عالي الجودة وتجسيد الفراغات بدقة مذهلة",
     titleEn: "Luxurious High-Quality Cinematic Rendering & Spatial Articulation",
     categoryAr: "الإخراج السينمائي الفخم",
@@ -75,14 +77,15 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
   const isRtl = lang === "ar";
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(1); // 1 for next/right, -1 for prev/left
-  const [isPlaying, setIsPlaying] = useState(true);
+  // Videos never autoplay: the showcase opens as a still poster and only
+  // plays when the visitor explicitly presses play.
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [progress, setProgress] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentVideo = SHORT_VIDEOS[currentIndex];
 
@@ -96,50 +99,18 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
     setCurrentIndex((prevIndex) => (prevIndex - 1 + SHORT_VIDEOS.length) % SHORT_VIDEOS.length);
   };
 
-  // Fallback auto-slide effect to change index after 15 seconds if paused or idle
-  useEffect(() => {
-    if (SHORT_VIDEOS.length <= 1) return;
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
+  // No auto-advance. Previously a 15s timer rotated slides whenever playback
+  // was paused; with playback now paused by default that timer would cycle
+  // the showcase forever. Navigation is manual only.
 
-    if (!isPlaying) {
-      intervalRef.current = setInterval(() => {
-        handleNext();
-      }, 15000);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [currentIndex, isPlaying]);
-
-  // Restart video playback when index changes
+  // Reset to the poster whenever the slide changes. Deliberately never calls
+  // play(): switching slides must not start audio or video on its own.
   useEffect(() => {
     if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.load();
-      if (isPlaying) {
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            // Autoplay blocks fallback
-            if (videoRef.current) {
-              videoRef.current.muted = true;
-              setIsMuted(true);
-              videoRef.current.play().catch(() => {
-                setIsPlaying(false);
-              });
-            }
-          });
-        }
-      } else {
-        videoRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch(() => {});
-      }
     }
+    setIsPlaying(false);
     setProgress(0);
   }, [currentIndex]);
 
@@ -284,13 +255,12 @@ export default function VideoShortsShowcase({ lang }: VideoShortsShowcaseProps) 
                 ref={videoRef}
                 src={currentVideo.url}
                 poster={currentVideo.poster}
-                autoPlay={isPlaying}
                 muted={isMuted}
                 onTimeUpdate={handleTimeUpdate}
-                onEnded={handleNext}
+                onEnded={() => setIsPlaying(false)}
                 onClick={togglePlay}
                 playsInline
-                preload="auto"
+                preload="none"
                 custom={direction}
                 variants={slideVariants}
                 initial="enter"
