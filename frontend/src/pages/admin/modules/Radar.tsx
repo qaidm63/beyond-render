@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Loader2, ExternalLink, AlertTriangle, RefreshCw } from 'lucide-react';
+import {
+  Loader2,
+  ExternalLink,
+  AlertTriangle,
+  RefreshCw,
+  PenLine,
+} from 'lucide-react';
 import { api, ApiError, type JobRow } from '@/lib/api';
 import type { PipelineStage } from '@/types';
 
@@ -28,13 +34,20 @@ function fitTone(score: number | null): string {
 function JobCard({
   job,
   onMove,
+  onDraft,
   busy,
+  drafting,
 }: {
   job: JobRow;
   onMove: (job: JobRow, stage: PipelineStage) => void;
+  onDraft: (job: JobRow) => void;
   busy: boolean;
+  drafting: boolean;
 }) {
   const next = NEXT_STAGE[job.stage];
+  // Drafting is only offered once the gatekeeper has cleared the job: an LLM
+  // call per below-threshold posting is exactly the cost the gate prevents.
+  const canDraft = job.stage === 'high_match' || job.stage === 'ready_to_apply';
   return (
     <article className="border border-zinc-800 bg-black/40 rounded-xl p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
@@ -86,6 +99,21 @@ function JobCard({
             Advance →
           </button>
         )}
+        {canDraft && (
+          <button
+            disabled={drafting}
+            onClick={() => onDraft(job)}
+            title="Draft a tailored cover letter with the Tailor Agent"
+            className="text-[11px] text-sky-400/80 hover:text-sky-300 disabled:opacity-40 flex items-center gap-1 ml-auto"
+          >
+            {drafting ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <PenLine className="w-3 h-3" />
+            )}
+            Draft
+          </button>
+        )}
       </div>
     </article>
   );
@@ -96,6 +124,8 @@ export default function Radar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [draftingId, setDraftingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -134,6 +164,28 @@ export default function Radar() {
     }
   }
 
+  async function draft(job: JobRow) {
+    setDraftingId(job.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.draftPitch(job.id);
+      setNotice(
+        `Draft saved for ${job.company} via ${result.generator}. ` +
+          `It stays private at ${result.vipPath} until you approve it in the ` +
+          `Pitch Studio.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? `Drafting failed: ${err.message} (HTTP ${err.status})`
+          : 'Drafting failed.',
+      );
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
   return (
     <section className="space-y-4">
       <header className="flex items-center justify-between">
@@ -154,6 +206,13 @@ export default function Radar() {
         <div className="flex gap-2 text-xs text-red-300 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div className="flex gap-2 text-xs text-sky-200 bg-sky-950/20 border border-sky-900/40 rounded-lg p-3">
+          <PenLine className="w-4 h-4 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
 
@@ -190,7 +249,9 @@ export default function Radar() {
                       key={job.id}
                       job={job}
                       onMove={move}
+                      onDraft={draft}
                       busy={movingId === job.id}
+                      drafting={draftingId === job.id}
                     />
                   ))
                 )}

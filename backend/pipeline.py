@@ -21,7 +21,7 @@ import logging
 import sys
 from dataclasses import asdict, dataclass, field
 
-from backend.agents import analyst
+from backend.agents import analyst, ops
 from backend.agents.scout import router
 from backend.core import repository
 from backend.core.config import DEFAULT_SEARCH_TERMS, SearchConfiguration
@@ -40,6 +40,7 @@ class SweepReport:
     rejected_count: int = 0
     errored_count: int = 0
     persisted_count: int = 0
+    notified: bool = False
     engine_counts: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -72,6 +73,7 @@ async def run_sweep(
     use_dom: bool = True,
     dry_run: bool = False,
     offline: bool = False,
+    notify: bool = False,
 ) -> SweepReport:
     """Run one complete discovery cycle."""
     report = SweepReport()
@@ -116,6 +118,12 @@ async def run_sweep(
         report.warnings.append(f"Persistence failed: {exc}")
         logger.error("Persistence failed: %s", exc)
 
+    # --- Operator alert (Phase 4) --------------------------------
+    # Only after persistence: an alert about jobs the Radar cannot show the
+    # operator is worse than no alert. Never raises — see agents/ops.py.
+    if notify and verdict.accepted:
+        report.notified = await ops.notify_high_matches(verdict.accepted)
+
     return report
 
 
@@ -124,6 +132,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="do not persist")
     parser.add_argument("--no-dom", action="store_true", help="skip Layer 2")
     parser.add_argument("--offline", action="store_true", help="hashing embedder")
+    parser.add_argument("--notify", action="store_true", help="send Telegram alert")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -133,6 +142,7 @@ def main() -> int:
             use_dom=not args.no_dom,
             dry_run=args.dry_run,
             offline=args.offline,
+            notify=args.notify,
         )
     )
 

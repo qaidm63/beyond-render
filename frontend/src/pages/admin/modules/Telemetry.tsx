@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Loader2, AlertTriangle, DatabaseZap } from 'lucide-react';
-import { api, ApiError, type IngestReport } from '@/lib/api';
+import {
+  Loader2,
+  AlertTriangle,
+  DatabaseZap,
+  Clock,
+  Send,
+  Radar as RadarIcon,
+} from 'lucide-react';
+import {
+  api,
+  ApiError,
+  type IngestReport,
+  type SchedulerState,
+} from '@/lib/api';
 
 /** Telemetry — Blueprint § 5.4: match stats and recruiter clicks. */
 
@@ -20,6 +32,10 @@ export default function Telemetry() {
   const [error, setError] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [ingestReport, setIngestReport] = useState<IngestReport | null>(null);
+  const [scheduler, setScheduler] = useState<SchedulerState | null>(null);
+  const [sweeping, setSweeping] = useState(false);
+  const [alerting, setAlerting] = useState(false);
+  const [opsNotice, setOpsNotice] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -29,7 +45,49 @@ export default function Telemetry() {
         setError(err instanceof ApiError ? err.message : 'Failed to load telemetry.'),
       )
       .finally(() => setLoading(false));
+
+    // Scheduler state is supplementary: its failure must not blank the page.
+    api.scheduler().then(setScheduler).catch(() => setScheduler(null));
   }, []);
+
+  async function runSweep() {
+    setSweeping(true);
+    setError(null);
+    setOpsNotice(null);
+    try {
+      const report = await api.runScheduledSweep();
+      setOpsNotice(
+        report.error
+          ? `Sweep failed: ${String(report.error)}`
+          : `Sweep finished — ${report.accepted_count ?? 0} accepted, ` +
+            `${report.rejected_count ?? 0} rejected.`,
+      );
+      setScheduler(await api.scheduler());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Sweep failed.');
+    } finally {
+      setSweeping(false);
+    }
+  }
+
+  async function sendTestAlert() {
+    setAlerting(true);
+    setError(null);
+    setOpsNotice(null);
+    try {
+      const result = await api.testAlert();
+      setOpsNotice(
+        result.delivered
+          ? 'Telegram alert delivered — check your chat.'
+          : 'Telegram is configured but the message was rejected. Verify the ' +
+            'bot token and that you have sent /start to the bot.',
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Alert test failed.');
+    } finally {
+      setAlerting(false);
+    }
+  }
 
   async function runIngest() {
     setIngesting(true);
@@ -107,6 +165,89 @@ export default function Telemetry() {
             {ingestReport.skipped.length} · failed=
             {Object.keys(ingestReport.failed).length}
           </p>
+        )}
+      </div>
+
+      <div className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
+        <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5" />
+          Automation
+        </h3>
+
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono">
+          <span className="text-zinc-600">Scheduler</span>
+          <span className={scheduler?.enabled ? 'text-emerald-400' : 'text-zinc-500'}>
+            {scheduler
+              ? scheduler.enabled
+                ? `every ${scheduler.intervalMinutes} min`
+                : 'disabled'
+              : 'unknown'}
+          </span>
+
+          <span className="text-zinc-600">Telegram</span>
+          <span
+            className={
+              scheduler?.telegramConfigured ? 'text-emerald-400' : 'text-amber-400'
+            }
+          >
+            {scheduler?.telegramConfigured ? 'configured' : 'not configured'}
+          </span>
+
+          <span className="text-zinc-600">Runs / failures</span>
+          <span className="text-zinc-400">
+            {scheduler?.runCount ?? 0} / {scheduler?.failureCount ?? 0}
+          </span>
+
+          <span className="text-zinc-600">Last finished</span>
+          <span className="text-zinc-400">
+            {scheduler?.lastFinishedAt
+              ? new Date(scheduler.lastFinishedAt).toLocaleString()
+              : 'never'}
+          </span>
+        </div>
+
+        {scheduler?.lastError && (
+          <p className="text-[11px] text-red-300/80 font-mono break-all">
+            last error: {scheduler.lastError}
+          </p>
+        )}
+
+        <p className="text-[11px] text-zinc-600 leading-relaxed">
+          Automatic sweeps are opt-in: set <code>SWEEP_INTERVAL_MINUTES</code>{' '}
+          in <code>.env</code> and restart the API. Enable it in one process
+          only.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void runSweep()}
+            disabled={sweeping}
+            className="flex items-center gap-2 border border-zinc-700 hover:border-amber-500/60 text-zinc-300 text-sm rounded-lg px-4 py-2 transition disabled:opacity-40"
+          >
+            {sweeping ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RadarIcon className="w-4 h-4" />
+            )}
+            Run sweep now
+          </button>
+
+          <button
+            onClick={() => void sendTestAlert()}
+            disabled={alerting}
+            className="flex items-center gap-2 border border-zinc-700 hover:border-sky-500/60 text-zinc-300 text-sm rounded-lg px-4 py-2 transition disabled:opacity-40"
+          >
+            {alerting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            Test Telegram alert
+          </button>
+        </div>
+
+        {opsNotice && (
+          <p className="text-[11px] text-sky-200/90 leading-relaxed">{opsNotice}</p>
         )}
       </div>
     </section>

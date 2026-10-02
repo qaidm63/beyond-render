@@ -25,6 +25,8 @@ from backend.core.embeddings import (
     get_embedding_provider,
     similarity_to_fit_score,
 )
+from backend.core.llm import LLMProvider, get_llm_provider
+from backend.core.portfolio import load_portfolio
 from backend.core.schemas import JobOpportunity, PipelineStage
 
 logger = logging.getLogger("shadow-matrix.analyst")
@@ -155,3 +157,60 @@ def gatekeep(
 
     logger.info("Gatekeeper: %s", result.summary())
     return result
+
+
+# ---------------------------------------------------------------- #
+# LLM layer (Phase 4)                                               #
+# ---------------------------------------------------------------- #
+
+RATIONALE_SYSTEM = (
+    "You are a hiring analyst. In at most three sentences, explain plainly why "
+    "the architect's project evidence does or does not fit the role. Be "
+    "specific and sceptical; name the strongest match and the biggest gap. "
+    "Never invent experience that is not in the evidence."
+)
+
+
+def explain_match(
+    job: JobOpportunity,
+    *,
+    llm: LLMProvider | None = None,
+) -> str:
+    """
+    Produce a short natural-language rationale for a score.
+
+    Advisory only — the numeric Fit Score alone decides the gate. This runs on
+    demand for a single job the operator is inspecting, never across a whole
+    sweep, because it costs an LLM call per invocation.
+    """
+    llm = llm or get_llm_provider()
+
+    by_id = {p.projectId: p for p in load_portfolio()}
+    project = by_id.get(job.bestProjectId or "")
+    if project is None:
+        evidence = "No specific project matched."
+    else:
+        evidence = "\n".join(
+            [
+                f"Project: {project.identity.title} "
+                f"({project.identity.category.value})",
+                f"Challenge: {project.decisionLog.challenge}",
+                f"Decision: {project.decisionLog.decision}",
+                f"Outcome: {project.decisionLog.outcome}",
+                f"Tools: {', '.join(project.softwareStack) or 'n/a'}",
+            ]
+        )
+
+    score = f"{job.fitScore:.1f}" if job.fitScore is not None else "unscored"
+    prompt = "\n".join(
+        [
+            f"Fit score: {score}/100",
+            "",
+            "## Role",
+            job.to_matching_document()[:1500],
+            "",
+            "## Closest project evidence",
+            evidence,
+        ]
+    )
+    return llm.generate(prompt, system=RATIONALE_SYSTEM)

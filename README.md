@@ -7,7 +7,7 @@ tailored pitch pages per company.
 Built to `Shadow_Matrix_Final_Blueprint` — see
 [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md).
 
-**Status: Phase 3 complete** (foundation · swarm & pgvector · Command Center).
+**Status: Phase 4 complete** (foundation · swarm & pgvector · Command Center · agents, alerts & scheduling).
 
 ## Architecture
 
@@ -59,6 +59,8 @@ API docs: `http://localhost:8000/api/docs`
 - [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md) — phased plan
 - [`docs/PHASE_2_OPERATIONS.md`](docs/PHASE_2_OPERATIONS.md) — schema, ingestion, sweeps
 - [`docs/PHASE_3_OPERATIONS.md`](docs/PHASE_3_OPERATIONS.md) — auth model, Command Center
+- [`docs/PHASE_4_OPERATIONS.md`](docs/PHASE_4_OPERATIONS.md) — Tailor & Analyst agents,
+  Telegram gateway, periodic scheduler, and their guard rails
 
 ## Security
 

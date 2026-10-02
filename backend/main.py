@@ -2,7 +2,7 @@
 Shadow Matrix — FastAPI entrypoint.
 Blueprint § 2 (`backend/main.py` — FastAPI contact points).
 
-PHASE 3 SCOPE
+PHASE 4 SCOPE
 -------------
 Public:
   GET  /api/health              liveness + dependency audit
@@ -21,6 +21,10 @@ Operator only (Supabase Auth, allowlisted):
   PATCH /api/pitches/{id}/approval
   POST  /api/ingest             embed the portfolio
   POST  /api/scout/run          run one sweep
+  POST  /api/pitches/draft      Tailor Agent drafts a cover letter
+  GET   /api/scheduler          periodic sweep state
+  POST  /api/scheduler/run      trigger a scheduled-style sweep now
+  POST  /api/ops/test-alert     verify the Telegram gateway
 
 Run with:
     uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -37,7 +41,8 @@ from pydantic import BaseModel, Field
 
 from backend import ingest as ingest_module
 from backend import pipeline as pipeline_module
-from backend.agents import ops
+from backend import scheduler as scheduler_module
+from backend.agents import ops, tailor
 from backend.agents.scout import dom_engine
 from backend.core import repository
 from backend.core.auth import Operator, auth_configured, current_operator
@@ -51,7 +56,8 @@ from backend.core.config import (
 from backend.core.database import database_status
 from backend.core.embeddings import get_embedding_provider
 from backend.core.portfolio import load_portfolio
-from backend.core.schemas import HealthResponse, PipelineStage
+from backend.core.llm import get_llm_provider
+from backend.core.schemas import HealthResponse, JobOpportunity, PipelineStage
 from backend.core.secrets import audit_secrets, missing_required_secrets
 
 logging.basicConfig(level=logging.INFO)
@@ -86,6 +92,18 @@ async def validate_environment() -> None:
             "Operator auth not configured — /matrix-admin stays sealed. "
             "Set SUPABASE_JWKS_URL and ADMIN_EMAILS."
         )
+
+    if not ops.configured():
+        logger.info("Telegram gateway not configured; alerts will be skipped.")
+
+    # Opt-in: disabled unless SWEEP_INTERVAL_MINUTES is set (Phase 4).
+    scheduler_module.start()
+
+
+@app.on_event("shutdown")
+async def stop_scheduler() -> None:
+    """Unwind the sweep loop so reloads do not leak tasks."""
+    await scheduler_module.stop()
 
 
 # ---------------------------------------------------------------- #
@@ -361,6 +379,7 @@ async def run_ingest(
 class SweepRequest(BaseModel):
     useDom: bool = True
     dryRun: bool = False
+    notify: bool = False
 
 
 @app.post("/api/scout/run")
@@ -371,15 +390,154 @@ async def run_scout(
     """
     Run one discovery sweep: Layers 1 and 2, then the Semantic Gatekeeper.
 
-    Synchronous for now. Phase 4 moves this behind the scheduler so the
-    operator never waits on a long sweep.
+    Synchronous on purpose: the operator pressed the button and wants the
+    report. The Phase 4 scheduler runs the same cycle unattended.
     """
     body = body or SweepRequest()
     try:
         report = await pipeline_module.run_sweep(
             use_dom=body.useDom,
             dry_run=body.dryRun,
+            notify=body.notify,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return report.as_dict()
+
+
+# ---------------------------------------------------------------- #
+# Phase 4 — Tailor Agent                                            #
+# ---------------------------------------------------------------- #
+
+
+class DraftRequest(BaseModel):
+    """Draft from a stored job id, or from an inline posting."""
+
+    jobId: str | None = None
+    job: JobOpportunity | None = None
+    featuredCount: int = Field(default=3, ge=1, le=6)
+    persist: bool = True
+    notify: bool = False
+
+
+@app.post("/api/pitches/draft")
+async def draft_pitch(
+    body: DraftRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """
+    Run the Tailor Agent: pick the most relevant evidence, draft a cover
+    letter, inject the VIP link.
+
+    The result is always **unapproved** — `/api/pitch/{companyId}` keeps
+    404ing until the operator approves it in the Pitch Studio. That keeps a
+    machine-written letter from ever reaching a recruiter unreviewed.
+    """
+    job = body.job
+    if job is None:
+        if not body.jobId:
+            raise HTTPException(
+                status_code=422, detail="Provide either 'jobId' or 'job'."
+            )
+        try:
+            rows = repository.list_jobs(limit=500)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        match = next((r for r in rows if str(r.get("id")) == body.jobId), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        job = JobOpportunity(
+            fingerprint=match.get("fingerprint", body.jobId),
+            title=match.get("title", ""),
+            company=match.get("company", ""),
+            companyId=match.get("company_id", ""),
+            url=match.get("url", ""),
+            source=match.get("source", "unknown"),
+            engine=match.get("engine", "xhr"),
+            id=str(match.get("id")),
+            location=match.get("location"),
+            description=match.get("description"),
+            contractType=match.get("contract_type"),
+            fitScore=match.get("fit_score"),
+            bestProjectId=match.get("best_project_id"),
+        )
+
+    try:
+        pitch = await tailor.compose(job, featured_count=body.featuredCount)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Drafting failed: {exc}") from exc
+
+    stored: dict[str, object] = {}
+    if body.persist:
+        try:
+            stored = repository.upsert_pitch(
+                company_id=pitch.companyId,
+                company_name=pitch.companyName,
+                job_id=job.id,
+                cover_letter=pitch.coverLetter,
+                featured_project_ids=pitch.featuredProjectIds,
+                approved=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if body.notify:
+        await ops.notify_pitch_ready(
+            pitch.companyName, pitch.companyId, tailor.vip_url(pitch.companyId)
+        )
+
+    repository.record_event("pitch_drafted", company_id=pitch.companyId)
+
+    return {
+        "pitch": pitch.model_dump(mode="json"),
+        "vipPath": tailor.vip_path(pitch.companyId),
+        "vipUrl": tailor.vip_url(pitch.companyId),
+        "generator": get_llm_provider().name,
+        "persisted": bool(stored),
+    }
+
+
+# ---------------------------------------------------------------- #
+# Phase 4 — Scheduler & ops gateway                                 #
+# ---------------------------------------------------------------- #
+
+
+@app.get("/api/scheduler")
+async def scheduler_state(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """Current state of the periodic sweep loop."""
+    state = scheduler_module.STATE.as_dict()
+    state["telegramConfigured"] = ops.configured()
+    return state
+
+
+@app.post("/api/scheduler/run")
+async def scheduler_run_now(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """
+    Run one sweep through the scheduler path, alerts included.
+
+    Unlike `/api/scout/run` this records into the scheduler's own state, so
+    the dashboard shows manual and automatic runs on the same timeline.
+    """
+    return await scheduler_module.run_once(notify=True)
+
+
+@app.post("/api/ops/test-alert")
+async def test_alert(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """Send a probe message so the operator can verify the Telegram wiring."""
+    if not ops.configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram not configured: set TELEGRAM_BOT_TOKEN and "
+            "TELEGRAM_CHAT_ID in .env.",
+        )
+    delivered = await ops.notify(
+        "<b>Shadow Matrix</b>\nTelegram gateway verified."
+    )
+    return {"configured": True, "delivered": delivered}

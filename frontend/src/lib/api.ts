@@ -129,6 +129,44 @@ export interface PitchRow {
   created_at: string;
 }
 
+export interface DraftResponse {
+  pitch: {
+    companyId: string;
+    companyName: string;
+    jobId: string;
+    coverLetter: string;
+    featuredProjectIds: string[];
+    approved: boolean;
+    viewCount: number;
+    createdAt: string;
+  };
+  vipPath: string;
+  vipUrl: string;
+  /** Which generator produced the letter, e.g. `gemini:…` or `template:offline`. */
+  generator: string;
+  persisted: boolean;
+}
+
+/**
+ * `/scheduler/run` returns the sweep report, or `{ error }` when the sweep
+ * raised. The scheduler swallows the exception so the loop survives, which
+ * means the failure arrives as data rather than as a non-2xx status.
+ */
+export type ScheduledRunResult = Partial<SweepReport> & { error?: string };
+
+export interface SchedulerState {
+  enabled: boolean;
+  intervalMinutes: number;
+  running: boolean;
+  runCount: number;
+  failureCount: number;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastReport: Partial<SweepReport>;
+  lastError: string | null;
+  telegramConfigured: boolean;
+}
+
 export interface PublicPitch {
   companyId: string;
   companyName: string;
@@ -187,10 +225,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ force, dryRun: false }),
     }),
-  runScout: (useDom = true) =>
+  runScout: (useDom = true, notify = false) =>
     request<SweepReport>('/scout/run', {
       method: 'POST',
-      body: JSON.stringify({ useDom, dryRun: false }),
+      body: JSON.stringify({ useDom, dryRun: false, notify }),
+    }),
+
+  /* ---- Phase 4 ---- */
+
+  /** Tailor Agent. Always returns an UNAPPROVED draft. */
+  draftPitch: (jobId: string, featuredCount = 3) =>
+    request<DraftResponse>('/pitches/draft', {
+      method: 'POST',
+      body: JSON.stringify({ jobId, featuredCount, persist: true, notify: false }),
+    }),
+
+  scheduler: () => request<SchedulerState>('/scheduler'),
+  runScheduledSweep: () =>
+    request<ScheduledRunResult>('/scheduler/run', { method: 'POST' }),
+  testAlert: () =>
+    request<{ configured: boolean; delivered: boolean }>('/ops/test-alert', {
+      method: 'POST',
     }),
 };
 

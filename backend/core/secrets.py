@@ -68,6 +68,16 @@ SECRET_INVENTORY: tuple[SecretSpec, ...] = (
     SecretSpec("ADMIN_EMAILS", "Comma-separated operator allowlist", required=False),
     SecretSpec("TELEGRAM_BOT_TOKEN", "Telegram bot token for ops alerts", required=False),
     SecretSpec("TELEGRAM_CHAT_ID", "Telegram chat id for ops alerts", required=False),
+    SecretSpec(
+        "PUBLIC_BASE_URL",
+        "Public origin recruiters reach, used to build absolute VIP links",
+        required=False,
+    ),
+    SecretSpec(
+        "SWEEP_INTERVAL_MINUTES",
+        "Periodic sweep interval; 0 or unset disables the scheduler",
+        required=False,
+    ),
 )
 
 
