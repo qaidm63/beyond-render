@@ -9,11 +9,13 @@ venv/
 build/
 dist/
 coverage/
+.pytest_cache/
 
 # secrets — NEVER commit
 .env
 .env.*
 !.env.example
+frontend/.env.local
 backend/cookies.json
 *.pem
 

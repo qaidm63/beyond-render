@@ -63,9 +63,11 @@ SECRET_INVENTORY: tuple[SecretSpec, ...] = (
     SecretSpec("GEMINI_API_KEY", "Gemini key for embeddings and analysis"),
     SecretSpec("GEMINI_MODEL", "Gemini generation model id", required=False),
     SecretSpec("GEMINI_EMBEDDING_MODEL", "Gemini embedding model id", required=False),
+    SecretSpec("SUPABASE_JWKS_URL", "JWKS endpoint for operator JWT verification", required=False),
+    SecretSpec("SUPABASE_JWT_SECRET", "Legacy HS256 JWT secret (fallback verifier)", required=False),
+    SecretSpec("ADMIN_EMAILS", "Comma-separated operator allowlist", required=False),
     SecretSpec("TELEGRAM_BOT_TOKEN", "Telegram bot token for ops alerts", required=False),
     SecretSpec("TELEGRAM_CHAT_ID", "Telegram chat id for ops alerts", required=False),
-    SecretSpec("ADMIN_SESSION_SECRET", "Signing secret for /matrix-admin sessions", required=False),
 )
 
 

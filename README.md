@@ -7,7 +7,7 @@ tailored pitch pages per company.
 Built to `Shadow_Matrix_Final_Blueprint` — see
 [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md).
 
-**Status: Phase 1 complete** (foundation cleanup & scaffolding).
+**Status: Phase 3 complete** (foundation · swarm & pgvector · Command Center).
 
 ## Architecture
 
@@ -21,8 +21,8 @@ backend/    Python 3.11 + FastAPI  (agent swarm)
 | Path | Audience | Status |
 |---|---|---|
 | `/` | Public visitors | Live |
-| `/vip/:companyId` | Recruiters (dynamic pitch) | Scaffold — data in Phase 3 |
-| `/matrix-admin` | Operator (Command Center) | Sealed — auth in Phase 3 |
+| `/vip/:companyId` | Recruiters (dynamic pitch) | Live — approved pitches only |
+| `/matrix-admin` | Operator (Command Center) | Live — Supabase Auth + allowlist |
 
 ### The Swarm (Blueprint § 4)
 1. **XHR / GraphQL Engine** (~80%) — direct JSON interception on open gateways.
@@ -52,6 +52,12 @@ npm run dev              # http://localhost:5173, proxies /api -> :8000
 
 API docs: `http://localhost:8000/api/docs`
 
+## Documentation
+
+- [`docs/SHADOW_MATRIX_EXECUTION_PLAN.md`](docs/SHADOW_MATRIX_EXECUTION_PLAN.md) — phased plan
+- [`docs/PHASE_2_OPERATIONS.md`](docs/PHASE_2_OPERATIONS.md) — schema, ingestion, sweeps
+- [`docs/PHASE_3_OPERATIONS.md`](docs/PHASE_3_OPERATIONS.md) — auth model, Command Center
+
 ## Security
 
 - `.env` and `backend/cookies.json` are git-ignored and must never be committed.
@@ -60,3 +66,9 @@ API docs: `http://localhost:8000/api/docs`
   (prod) forwards them to FastAPI.
 - No automated login, no 2FA bypass, no fabricated credentials. Browser sessions
   are exported manually by the system operator.
+- Operator JWTs are verified server-side on every protected request;
+  `ProtectedRoute` only controls rendering. Authorisation requires an explicit
+  `ADMIN_EMAILS` allowlist — a valid Supabase user is not automatically an
+  operator.
+- `frontend/.env.local` holds public `VITE_*` values only; Vite inlines them
+  into the bundle.

@@ -1,0 +1,165 @@
+import { useEffect, useState } from 'react';
+import { Loader2, AlertTriangle, Link2, Check, X, Copy } from 'lucide-react';
+import { api, ApiError, type PitchRow } from '@/lib/api';
+
+/** Dynamic Pitch Studio — Blueprint § 5.3. */
+
+export default function PitchStudio() {
+  const [pitches, setPitches] = useState<PitchRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setPitches(await api.listPitches());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load pitches.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function toggleApproval(pitch: PitchRow) {
+    const previous = pitches;
+    setPitches((cur) =>
+      cur.map((p) =>
+        p.company_id === pitch.company_id ? { ...p, approved: !p.approved } : p,
+      ),
+    );
+    try {
+      await api.approvePitch(pitch.company_id, !pitch.approved);
+    } catch {
+      setPitches(previous);
+      setError('Could not change approval — reverted.');
+    }
+  }
+
+  function copyLink(companyId: string) {
+    const url = `${window.location.origin}/vip/${companyId}`;
+    void navigator.clipboard?.writeText(url);
+    setCopied(companyId);
+    setTimeout(() => setCopied(null), 1800);
+  }
+
+  return (
+    <section className="space-y-4 max-w-4xl">
+      <header>
+        <h2 className="text-white font-semibold">Dynamic Pitch Studio</h2>
+        <p className="text-xs text-zinc-500">
+          Review cover letters and mint VIP links. Unapproved pitches return 404
+          publicly — a draft can never leak.
+        </p>
+      </header>
+
+      {error && (
+        <div className="flex gap-2 text-xs text-red-300 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading pitches…
+        </div>
+      ) : pitches.length === 0 ? (
+        <div className="border border-dashed border-zinc-800 rounded-2xl p-10 text-center space-y-2">
+          <p className="text-sm text-zinc-500">No pitches yet.</p>
+          <p className="text-xs text-zinc-600">
+            The Tailor Agent generates these in Phase 4 from high-match jobs.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {pitches.map((pitch) => (
+            <article
+              key={pitch.company_id}
+              className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-zinc-200 font-medium">{pitch.company_name}</h3>
+                  <p className="text-[11px] font-mono text-zinc-600">
+                    /vip/{pitch.company_id} · {pitch.view_count} views
+                  </p>
+                </div>
+                <span
+                  className={`text-[10px] font-mono border rounded px-2 py-1 shrink-0 ${
+                    pitch.approved
+                      ? 'text-emerald-300 border-emerald-900/60'
+                      : 'text-zinc-500 border-zinc-800'
+                  }`}
+                >
+                  {pitch.approved ? 'LIVE' : 'DRAFT'}
+                </span>
+              </div>
+
+              {pitch.cover_letter && (
+                <p className="text-xs text-zinc-500 leading-relaxed line-clamp-4 whitespace-pre-line">
+                  {pitch.cover_letter}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {pitch.featured_project_ids.map((id) => (
+                  <span
+                    key={id}
+                    className="text-[10px] font-mono text-zinc-500 border border-zinc-800 rounded px-2 py-0.5"
+                  >
+                    {id}
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-4 pt-1">
+                <button
+                  onClick={() => void toggleApproval(pitch)}
+                  className="text-xs flex items-center gap-1.5 text-amber-400/80 hover:text-amber-300"
+                >
+                  {pitch.approved ? (
+                    <>
+                      <X className="w-3.5 h-3.5" /> Unpublish
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" /> Approve &amp; publish
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => copyLink(pitch.company_id)}
+                  className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300"
+                >
+                  {copied === pitch.company_id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> Copy VIP link
+                    </>
+                  )}
+                </button>
+                <a
+                  href={`/vip/${pitch.company_id}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300"
+                >
+                  <Link2 className="w-3.5 h-3.5" /> Preview
+                </a>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

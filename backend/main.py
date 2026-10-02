@@ -2,14 +2,25 @@
 Shadow Matrix — FastAPI entrypoint.
 Blueprint § 2 (`backend/main.py` — FastAPI contact points).
 
-PHASE 1 SCOPE
+PHASE 3 SCOPE
 -------------
-Operational surface only:
-  GET /api/health         liveness + dependency audit
-  GET /api/config         the live SearchConfiguration (read-only for now)
-  GET /api/admin/session  authorisation verdict for /matrix-admin
+Public:
+  GET  /api/health              liveness + dependency audit
+  GET  /api/health/dependencies secret/db/session audit (no values)
+  GET  /api/pitch/{companyId}   recruiter-facing VIP payload (+ view tracking)
 
-Everything else is declared in the agent modules and arrives in Phases 2–4.
+Operator only (Supabase Auth, allowlisted):
+  GET   /api/admin/session      who am I
+  GET   /api/config             live SearchConfiguration
+  PATCH /api/config             Swarm Configurator writes
+  GET   /api/jobs               the Radar pipeline
+  PATCH /api/jobs/{id}/stage    Kanban moves
+  GET   /api/telemetry          measurement centre
+  GET   /api/pitches            Pitch Studio list
+  POST  /api/pitches            mint / update a pitch
+  PATCH /api/pitches/{id}/approval
+  POST  /api/ingest             embed the portfolio
+  POST  /api/scout/run          run one sweep
 
 Run with:
     uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -20,15 +31,16 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend import ingest as ingest_module
 from backend import pipeline as pipeline_module
 from backend.agents import ops
 from backend.agents.scout import dom_engine
 from backend.core import repository
+from backend.core.auth import Operator, auth_configured, current_operator
 from backend.core.config import (
     ALLOWED_ORIGINS,
     APP_NAME,
@@ -38,6 +50,7 @@ from backend.core.config import (
 )
 from backend.core.database import database_status
 from backend.core.embeddings import get_embedding_provider
+from backend.core.portfolio import load_portfolio
 from backend.core.schemas import HealthResponse, PipelineStage
 from backend.core.secrets import audit_secrets, missing_required_secrets
 
@@ -68,6 +81,17 @@ async def validate_environment() -> None:
     else:
         logger.info("Secret inventory complete.")
 
+    if not auth_configured():
+        logger.warning(
+            "Operator auth not configured — /matrix-admin stays sealed. "
+            "Set SUPABASE_JWKS_URL and ADMIN_EMAILS."
+        )
+
+
+# ---------------------------------------------------------------- #
+# Health (public)                                                   #
+# ---------------------------------------------------------------- #
+
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
@@ -82,26 +106,47 @@ async def health() -> HealthResponse:
 
 @app.get("/api/health/dependencies")
 async def dependencies() -> dict[str, object]:
-    """
-    Operational audit. Reports only *presence* of secrets — never values.
-    """
+    """Operational audit. Reports only *presence* of secrets, never values."""
     return {
         "secrets": audit_secrets(),
         "missingRequired": missing_required_secrets(),
         "database": database_status(),
         "browserSession": dom_engine.session_ready(),
         "telegram": ops.configured(),
+        "operatorAuth": auth_configured(),
     }
 
 
+# ---------------------------------------------------------------- #
+# Operator session                                                  #
+# ---------------------------------------------------------------- #
+
+
+@app.get("/api/admin/session")
+async def admin_session(operator: Operator = Depends(current_operator)) -> dict:
+    """Authorisation verdict for the Command Center."""
+    return {
+        "authorised": True,
+        "userId": operator.user_id,
+        "email": operator.email,
+        "role": operator.role,
+    }
+
+
+# ---------------------------------------------------------------- #
+# Search configuration (§ 3.b, § 5.2)                               #
+# ---------------------------------------------------------------- #
+
+
 @app.get("/api/config", response_model=SearchConfiguration)
-async def read_config() -> SearchConfiguration:
+async def read_config(
+    _operator: Operator = Depends(current_operator),
+) -> SearchConfiguration:
     """
     The live Search Configuration matrix.
 
-    The `agent_config` table is authoritative. We fall back to the in-code
-    default when it is unreachable so the console still renders something
-    truthful rather than erroring.
+    The `agent_config` table is authoritative; the in-code default is served
+    when it is unreachable so the console renders something truthful.
     """
     try:
         stored = repository.read_config()
@@ -111,8 +156,175 @@ async def read_config() -> SearchConfiguration:
     return stored or DEFAULT_SEARCH_CONFIGURATION
 
 
+@app.patch("/api/config", response_model=SearchConfiguration)
+async def update_config(
+    config: SearchConfiguration,
+    _operator: Operator = Depends(current_operator),
+) -> SearchConfiguration:
+    """Swarm Configurator writes. Pydantic clamps the threshold to 0–100."""
+    try:
+        repository.write_config(config)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return config
+
+
 # ---------------------------------------------------------------- #
-# Phase 2 — ingestion, sweep, pipeline read                         #
+# Radar (§ 5.1)                                                     #
+# ---------------------------------------------------------------- #
+
+
+@app.get("/api/jobs")
+async def list_jobs(
+    stage: PipelineStage | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    _operator: Operator = Depends(current_operator),
+) -> list[dict[str, object]]:
+    """Read the scout pipeline, newest first."""
+    try:
+        return repository.list_jobs(stage=stage, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class StageUpdate(BaseModel):
+    stage: PipelineStage
+
+
+@app.patch("/api/jobs/{job_id}/stage")
+async def move_job(
+    job_id: str,
+    body: StageUpdate,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, str]:
+    """Kanban column move."""
+    try:
+        repository.update_job_stage(job_id, body.stage)
+        repository.record_event(
+            "job_stage_change", job_id=job_id, metadata={"stage": body.stage.value}
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"id": job_id, "stage": body.stage.value}
+
+
+# ---------------------------------------------------------------- #
+# Telemetry (§ 5.4)                                                 #
+# ---------------------------------------------------------------- #
+
+
+@app.get("/api/telemetry")
+async def telemetry(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    try:
+        return repository.telemetry_snapshot()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------- #
+# Pitch Studio (§ 5.3)                                              #
+# ---------------------------------------------------------------- #
+
+
+class PitchUpsert(BaseModel):
+    companyId: str = Field(min_length=1, max_length=200)
+    companyName: str = Field(min_length=1, max_length=300)
+    jobId: str | None = None
+    coverLetter: str = ""
+    featuredProjectIds: list[str] = Field(default_factory=list)
+    approved: bool = False
+
+
+@app.get("/api/pitches")
+async def list_pitches(
+    _operator: Operator = Depends(current_operator),
+) -> list[dict[str, object]]:
+    try:
+        return repository.list_pitches()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/pitches")
+async def upsert_pitch(
+    body: PitchUpsert,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    """Create or update a tailored pitch and its VIP link."""
+    valid_ids = {p.projectId for p in load_portfolio()}
+    unknown = [pid for pid in body.featuredProjectIds if pid not in valid_ids]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown project ids: {', '.join(unknown)}",
+        )
+    try:
+        return repository.upsert_pitch(
+            company_id=body.companyId,
+            company_name=body.companyName,
+            job_id=body.jobId,
+            cover_letter=body.coverLetter,
+            featured_project_ids=body.featuredProjectIds,
+            approved=body.approved,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class ApprovalUpdate(BaseModel):
+    approved: bool
+
+
+@app.patch("/api/pitches/{company_id}/approval")
+async def approve_pitch(
+    company_id: str,
+    body: ApprovalUpdate,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
+    try:
+        repository.set_pitch_approval(company_id, body.approved)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"companyId": company_id, "approved": body.approved}
+
+
+@app.get("/api/pitch/{company_id}")
+async def public_pitch(company_id: str) -> dict[str, object]:
+    """
+    Recruiter-facing VIP payload. PUBLIC — this link is the product.
+
+    Unapproved pitches 404 rather than leaking a draft cover letter. Project
+    bodies are served from the shared source of truth so the page never
+    depends on the database being reachable for its content.
+    """
+    try:
+        pitch = repository.get_pitch(company_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if pitch is None or not pitch.get("approved"):
+        raise HTTPException(status_code=404, detail="Pitch not found.")
+
+    featured_ids = pitch.get("featured_project_ids") or []
+    by_id = {p.projectId: p for p in load_portfolio()}
+    projects = [by_id[pid].model_dump() for pid in featured_ids if pid in by_id]
+
+    # Fire-and-forget; never blocks or breaks the recruiter's page load.
+    repository.record_event("pitch_view", company_id=company_id)
+    repository.increment_pitch_view(company_id)
+
+    return {
+        "companyId": pitch["company_id"],
+        "companyName": pitch["company_name"],
+        "coverLetter": pitch.get("cover_letter", ""),
+        "projects": projects,
+    }
+
+
+# ---------------------------------------------------------------- #
+# Ingestion & sweeps                                                #
 # ---------------------------------------------------------------- #
 
 
@@ -122,7 +334,10 @@ class IngestRequest(BaseModel):
 
 
 @app.post("/api/ingest")
-async def run_ingest(body: IngestRequest | None = None) -> dict[str, object]:
+async def run_ingest(
+    body: IngestRequest | None = None,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
     """Embed the portfolio source of truth into pgvector."""
     body = body or IngestRequest()
     try:
@@ -149,7 +364,10 @@ class SweepRequest(BaseModel):
 
 
 @app.post("/api/scout/run")
-async def run_scout(body: SweepRequest | None = None) -> dict[str, object]:
+async def run_scout(
+    body: SweepRequest | None = None,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, object]:
     """
     Run one discovery sweep: Layers 1 and 2, then the Semantic Gatekeeper.
 
@@ -165,30 +383,3 @@ async def run_scout(body: SweepRequest | None = None) -> dict[str, object]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return report.as_dict()
-
-
-@app.get("/api/jobs")
-async def list_jobs(
-    stage: PipelineStage | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict[str, object]]:
-    """Read the scout pipeline, newest first. Backs the Radar in Phase 3."""
-    try:
-        return repository.list_jobs(stage=stage, limit=limit)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@app.get("/api/admin/session")
-async def admin_session() -> dict[str, str]:
-    """
-    Authorisation verdict for the Command Center.
-
-    Phase 1 denies unconditionally: no auth strategy has been selected, so the
-    route stays sealed rather than open. Phase 3 replaces this body with the
-    real check once the owner picks Supabase Auth or an operator credential.
-    """
-    raise HTTPException(
-        status_code=401,
-        detail="Operator authentication not configured (Phase 3).",
-    )

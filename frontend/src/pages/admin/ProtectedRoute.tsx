@@ -1,50 +1,19 @@
-import { ReactNode, useEffect, useState } from 'react';
-import { ShieldAlert, Loader2 } from 'lucide-react';
+import { ReactNode } from 'react';
+import { Loader2, ShieldAlert } from 'lucide-react';
+import { useOperator } from '@/lib/useOperator';
+import LoginPage from './LoginPage';
 
 /**
  * Admin route guard — Blueprint § 5 ("Protected Route").
  *
- * PHASE 1 SCOPE: this is a *structural* guard only. It asks the backend
- * whether the current session is authorised; the backend currently answers
- * "not configured", so the Command Center is sealed by default.
- *
- * PHASE 3 will wire this to the real auth decision (Supabase Auth or a single
- * operator credential — pending the owner's decision). Nothing secret is ever
- * evaluated in the browser: the verdict always comes from the server.
+ * This component controls what is RENDERED, not what is PERMITTED. Every
+ * protected endpoint re-verifies the operator's JWT server-side, so bypassing
+ * this guard in the browser yields nothing but 401s.
  */
-
-type AuthState = 'checking' | 'authorised' | 'denied';
-
 export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>('checking');
-  const [reason, setReason] = useState<string>('');
+  const { state, signOut } = useOperator();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch('/api/admin/session', { credentials: 'same-origin' })
-      .then(async (res) => {
-        if (cancelled) return;
-        if (res.ok) {
-          setState('authorised');
-          return;
-        }
-        const body = await res.json().catch(() => ({}));
-        setReason(body?.detail ?? `HTTP ${res.status}`);
-        setState('denied');
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setReason(err instanceof Error ? err.message : 'Backend unreachable');
-        setState('denied');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (state === 'checking') {
+  if (state.status === 'checking') {
     return (
       <div className="min-h-screen bg-[#07080c] flex items-center justify-center text-zinc-400">
         <Loader2 className="w-5 h-5 animate-spin mr-3" />
@@ -53,24 +22,34 @@ export default function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (state === 'denied') {
+  if (state.status === 'unconfigured') {
     return (
       <div className="min-h-screen bg-[#07080c] flex items-center justify-center px-6">
-        <div className="max-w-md w-full border border-red-900/40 bg-red-950/10 rounded-2xl p-8 text-center space-y-4">
-          <ShieldAlert className="w-10 h-10 text-red-400 mx-auto" />
+        <div className="max-w-md w-full border border-amber-900/40 bg-amber-950/10 rounded-2xl p-8 text-center space-y-4">
+          <ShieldAlert className="w-10 h-10 text-amber-400 mx-auto" />
           <h1 className="text-white font-semibold text-xl">
-            Command Center Sealed
+            Authentication Not Configured
           </h1>
-          <p className="text-zinc-400 text-sm leading-relaxed">
-            Operator authentication is not yet configured. This route unlocks in
-            Phase 3 once the auth strategy is selected.
-          </p>
-          {reason && (
-            <p className="text-xs font-mono text-zinc-600 break-words">
-              {reason}
-            </p>
-          )}
+          <p className="text-zinc-400 text-sm leading-relaxed">{state.reason}</p>
         </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'signed-out') {
+    return <LoginPage />;
+  }
+
+  if (state.status === 'denied') {
+    return (
+      <div className="min-h-screen bg-[#07080c] flex flex-col items-center justify-center px-6 gap-4">
+        <LoginPage notice={state.reason} />
+        <button
+          onClick={() => void signOut()}
+          className="text-xs text-zinc-500 hover:text-zinc-300 underline"
+        >
+          Sign out of the current account
+        </button>
       </div>
     );
   }

@@ -216,3 +216,132 @@ def write_config(config: SearchConfiguration) -> None:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     ).execute()
+
+
+# ---------------------------------------------------------------- #
+# Pitches (§ 5.3)                                                   #
+# ---------------------------------------------------------------- #
+
+
+def upsert_pitch(
+    company_id: str,
+    company_name: str,
+    job_id: str | None,
+    cover_letter: str,
+    featured_project_ids: list[str],
+    approved: bool = False,
+) -> dict[str, Any]:
+    res = (
+        get_supabase()
+        .table("pitches")
+        .upsert(
+            {
+                "company_id": company_id,
+                "company_name": company_name,
+                "job_id": job_id,
+                "cover_letter": cover_letter,
+                "featured_project_ids": featured_project_ids,
+                "approved": approved,
+            }
+        )
+        .execute()
+    )
+    rows = res.data or []
+    return rows[0] if rows else {}
+
+
+def get_pitch(company_id: str) -> dict[str, Any] | None:
+    res = (
+        get_supabase()
+        .table("pitches")
+        .select("*")
+        .eq("company_id", company_id)
+        .execute()
+    )
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
+def list_pitches(limit: int = 100) -> list[dict[str, Any]]:
+    res = (
+        get_supabase()
+        .table("pitches")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+def set_pitch_approval(company_id: str, approved: bool) -> None:
+    get_supabase().table("pitches").update({"approved": approved}).eq(
+        "company_id", company_id
+    ).execute()
+
+
+def increment_pitch_view(company_id: str) -> None:
+    """
+    Record a recruiter visit.
+
+    Read-then-write is racy under concurrent views; for a handful of recruiter
+    visits that is an acceptable trade against adding a SQL function. The
+    telemetry event log below is the authoritative count.
+    """
+    pitch = get_pitch(company_id)
+    if pitch is None:
+        return
+    get_supabase().table("pitches").update(
+        {"view_count": int(pitch.get("view_count", 0)) + 1}
+    ).eq("company_id", company_id).execute()
+
+
+# ---------------------------------------------------------------- #
+# Telemetry (§ 5.4)                                                 #
+# ---------------------------------------------------------------- #
+
+
+def record_event(
+    event_type: str,
+    company_id: str | None = None,
+    job_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Append-only event log. Never raises into the request path."""
+    try:
+        get_supabase().table("telemetry_events").insert(
+            {
+                "event_type": event_type,
+                "company_id": company_id,
+                "job_id": job_id,
+                "metadata": metadata or {},
+            }
+        ).execute()
+    except Exception as exc:  # noqa: BLE001 - telemetry must never break UX
+        logger.warning("Telemetry write failed (%s): %s", event_type, exc)
+
+
+def telemetry_snapshot() -> dict[str, Any]:
+    """Aggregate counters for the Command Center's measurement module."""
+    client = get_supabase()
+
+    def _count(table: str, **filters: Any) -> int:
+        query = client.table(table).select("*", count="exact")
+        for column, value in filters.items():
+            query = query.eq(column, value)
+        return query.execute().count or 0
+
+    scored = (
+        client.table("jobs").select("fit_score").not_.is_("fit_score", "null").execute()
+    )
+    scores = [float(r["fit_score"]) for r in (scored.data or []) if r.get("fit_score")]
+
+    return {
+        "totalDiscovered": _count("jobs"),
+        "totalHighMatch": _count("jobs", stage="high_match"),
+        "totalReadyToApply": _count("jobs", stage="ready_to_apply"),
+        "totalApplied": _count("jobs", stage="applied"),
+        "averageFitScore": round(sum(scores) / len(scores), 2) if scores else 0.0,
+        "recruiterClicks": _count("telemetry_events", event_type="pitch_view"),
+        "totalPitches": _count("pitches"),
+    }
