@@ -207,7 +207,7 @@ async def synthesize(
         "projectId": project_id,
         "isNew": project_id not in existing,
         "assetObservations": observations,
-        "generator": get_llm_provider(role="tailor").name,
+        "generator": get_llm_provider(role="curator").name,
         "sourceDocument": project.to_embedding_document(),
     }
 

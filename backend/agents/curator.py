@@ -26,7 +26,7 @@ import logging
 import re
 from typing import Any
 
-from backend.core.llm import LLMProvider, get_llm_provider
+from backend.core.llm import LLMProvider, get_llm_provider, get_vision_provider
 from backend.core.schemas import (
     ProjectCategory,
     ProjectEvidence,
@@ -205,12 +205,17 @@ async def inspect_assets(
     if not assets:
         return ""
 
-    llm = llm or get_llm_provider(role="vision")
+    llm = llm or get_vision_provider()
+    if llm is None:
+        # No multimodal provider configured. Returning "" keeps the draft
+        # text-only instead of asking a blind model to describe drawings.
+        return ""
     subset = assets[:MAX_ASSETS_INSPECTED]
 
     try:
-        # AMD providers accept images natively; others fall back to text-only
-        # and simply describe nothing, which the caller handles.
+        # Both the Gemini and AMD providers accept an `images` kwarg; any
+        # third-party provider that does not is handled by the TypeError
+        # branch below.
         if hasattr(llm, "agenerate"):
             try:
                 return await llm.agenerate(  # type: ignore[call-arg]
@@ -360,7 +365,7 @@ async def synthesise(
     """
     observations = await inspect_assets(assets or [], llm=vision)
 
-    llm = llm or get_llm_provider(role="tailor")
+    llm = llm or get_llm_provider(role="curator")
     prompt = build_prompt(payload, observations)
     raw = await llm.agenerate(prompt, system=SYNTHESIS_SYSTEM)
 

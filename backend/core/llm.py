@@ -18,8 +18,10 @@ import httpx
 
 from .config import (
     AMD_MODEL_ANALYST,
+    AMD_MODEL_CURATOR,
     AMD_MODEL_TAILOR,
     AMD_MODEL_VISION,
+    CURATOR_VISION_MODEL,
     GEMINI_MODEL,
 )
 from .secrets import get_secret, require_secret
@@ -27,6 +29,25 @@ from .secrets import get_secret, require_secret
 logger = logging.getLogger("shadow-matrix.llm")
 
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _as_inline_data(asset: str) -> dict | None:
+    """
+    Convert a `data:` URL into a Gemini `inlineData` part.
+
+    Remote URLs are skipped rather than fetched: silently pulling an operator
+    -supplied URL server-side would be a request-forgery vector.
+    """
+    if not asset.startswith("data:"):
+        return None
+    try:
+        header, encoded = asset.split(",", 1)
+    except ValueError:
+        return None
+    mime = header[5:].split(";", 1)[0] or "application/octet-stream"
+    if ";base64" not in header:
+        return None
+    return {"mimeType": mime, "data": encoded}
 
 
 class LLMError(RuntimeError):
@@ -62,26 +83,39 @@ class GeminiLLMProvider:
         model: str | None = None,
         timeout: float = 60.0,
         temperature: float = 0.4,
+        max_output_tokens: int = 1024,
     ) -> None:
         self.model = model or GEMINI_MODEL or "gemini-3-flash-preview"
         self.name = f"gemini:{self.model}"
         self.online = True
         self._timeout = timeout
         self._temperature = temperature
+        self._max_output_tokens = max_output_tokens
 
-    def generate(self, prompt: str, *, system: str | None = None) -> str:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        images: list[str] | None = None,
+    ) -> str:
         if not prompt or not prompt.strip():
             raise LLMError("Refusing to send an empty prompt.")
 
         api_key = require_secret("GEMINI_API_KEY")
         url = f"{GEMINI_ENDPOINT}/{self.model}:generateContent"
 
+        parts: list[dict] = [{"text": prompt}]
+        for image in images or []:
+            inline = _as_inline_data(image)
+            if inline is not None:
+                parts.append({"inlineData": inline})
+
         payload: dict = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {
                 "temperature": self._temperature,
-                # A cover letter that overruns is worse than one that is tight.
-                "maxOutputTokens": 1024,
+                "maxOutputTokens": self._max_output_tokens,
             },
         }
         if system:
@@ -117,11 +151,19 @@ class GeminiLLMProvider:
             raise LLMError("Gemini returned an empty completion.")
         return text
 
-    async def agenerate(self, prompt: str, *, system: str | None = None) -> str:
+    async def agenerate(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        images: list[str] | None = None,
+    ) -> str:
         """httpx here is blocking; keep the event loop free."""
         import asyncio
 
-        return await asyncio.to_thread(self.generate, prompt, system=system)
+        return await asyncio.to_thread(
+            self.generate, prompt, system=system, images=images
+        )
 
 
 # ---------------------------------------------------------------- #
@@ -165,7 +207,21 @@ ROLE_MODELS: dict[str, str | None] = {
     "vision": AMD_MODEL_VISION,
     "analyst": AMD_MODEL_ANALYST,
     "tailor": AMD_MODEL_TAILOR,
+    "curator": AMD_MODEL_CURATOR,
 }
+
+# A cover letter that overruns is worse than one that is tight, but a case
+# study truncated mid-JSON is unusable — the curator needs real headroom.
+ROLE_MAX_TOKENS: dict[str, int] = {
+    "vision": 1024,
+    "analyst": 1024,
+    "tailor": 1024,
+    "curator": 4096,
+}
+
+# Synthesis is a factual exercise constrained by the operator's brief, so it
+# runs colder than cover-letter writing.
+ROLE_TEMPERATURE: dict[str, float] = {"curator": 0.3}
 
 
 def get_llm_provider(
@@ -192,15 +248,57 @@ def get_llm_provider(
     # would make the dependency cycle load-order sensitive.
     from .amd import AMDChatProvider, available as amd_available
 
+    max_tokens = ROLE_MAX_TOKENS.get(role, 1024)
+    temperature = ROLE_TEMPERATURE.get(role, 0.4)
+
     if amd_available():
         model = ROLE_MODELS.get(role) or AMD_MODEL_TAILOR or "DeepSeek-V4-Flash-0731"
-        return AMDChatProvider(model)
+        return AMDChatProvider(
+            model, temperature=temperature, max_tokens=max_tokens
+        )
 
     if get_secret("GEMINI_API_KEY") is not None:
-        return GeminiLLMProvider()
+        return GeminiLLMProvider(
+            temperature=temperature, max_output_tokens=max_tokens
+        )
 
     logger.warning(
         "No AMD or Gemini credentials configured; falling back to offline "
         "template generation. Cover letters will need manual rewriting."
     )
     return TemplateLLMProvider()
+
+
+def get_vision_provider(offline: bool = False) -> LLMProvider | None:
+    """
+    Resolve a genuinely multimodal provider for Portfolio Studio asset
+    inspection, or ``None`` when none is configured.
+
+    This is deliberately NOT ``get_llm_provider(role="vision")``. That role is
+    bound to ``AMD_MODEL_VISION``, which defaults to a text-only model used
+    for DOM extraction; handing it renderings would either error or, worse,
+    return a confident description of nothing.
+
+    ``None`` is a valid answer. The caller treats missing observations as a
+    degraded draft rather than a failure, which beats inventing a provider
+    that cannot see.
+    """
+    if offline:
+        return None
+
+    if get_secret("GEMINI_API_KEY") is not None:
+        return GeminiLLMProvider(
+            model=CURATOR_VISION_MODEL, temperature=0.2, max_output_tokens=1536
+        )
+
+    from .amd import AMDChatProvider, available as amd_available
+
+    explicit = get_secret("AMD_MODEL_CURATOR_VISION")
+    if explicit and amd_available():
+        return AMDChatProvider(explicit, temperature=0.2, max_tokens=1536)
+
+    logger.warning(
+        "No multimodal provider configured; uploaded assets will not be "
+        "inspected. Set GEMINI_API_KEY or AMD_MODEL_CURATOR_VISION."
+    )
+    return None

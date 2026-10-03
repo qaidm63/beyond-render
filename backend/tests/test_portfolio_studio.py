@@ -410,3 +410,109 @@ def test_asset_inspection_failure_does_not_block_synthesis():
             raise RuntimeError("vision down")
 
     assert asyncio.run(curator.inspect_assets(["a.png"], llm=Broken())) == ""
+
+
+# ---------------------------------------------------------------- #
+# Model routing                                                     #
+# ---------------------------------------------------------------- #
+
+
+def test_curator_role_uses_the_largest_catalogue_model():
+    """A case study is written once and read for years — not a job for 2B."""
+    from backend.core.llm import ROLE_MODELS
+
+    assert ROLE_MODELS["curator"] == "DeepSeek-V4-Flash-0731"
+    assert ROLE_MODELS["curator"] != ROLE_MODELS["analyst"]
+
+
+def test_curator_gets_enough_tokens_for_a_whole_case_study():
+    """1024 tokens truncates the JSON mid-object and the parse fails."""
+    from backend.core.llm import ROLE_MAX_TOKENS
+
+    assert ROLE_MAX_TOKENS["curator"] >= 4096
+    assert ROLE_MAX_TOKENS["curator"] > ROLE_MAX_TOKENS["tailor"]
+
+
+def test_curator_runs_colder_than_the_tailor():
+    from backend.core.llm import ROLE_TEMPERATURE
+
+    assert ROLE_TEMPERATURE["curator"] < 0.4
+
+
+def test_unknown_role_still_resolves(monkeypatch):
+    from backend.core import llm as llm_module
+
+    monkeypatch.setattr(llm_module, "get_secret", lambda *a, **k: None)
+    monkeypatch.setattr("backend.core.amd.available", lambda: False)
+    provider = llm_module.get_llm_provider(role="nonsense")
+    assert provider.name == "template:offline"
+
+
+def test_amd_curator_provider_carries_the_larger_budget(monkeypatch):
+    from backend.core import llm as llm_module
+
+    monkeypatch.setattr("backend.core.amd.available", lambda: True)
+    provider = llm_module.get_llm_provider(role="curator")
+    assert provider.model == "DeepSeek-V4-Flash-0731"
+    assert provider._max_tokens >= 4096
+
+
+def test_vision_provider_is_not_the_text_only_dom_model(monkeypatch):
+    """
+    AMD_MODEL_VISION is text-only and belongs to the DOM engine. Reusing it
+    for renderings would return confident descriptions of nothing.
+    """
+    from backend.core import llm as llm_module
+
+    monkeypatch.setattr(
+        llm_module, "get_secret", lambda name, *a, **k: "key" if name == "GEMINI_API_KEY" else None
+    )
+    provider = llm_module.get_vision_provider()
+    assert provider is not None
+    assert "gemini" in provider.name
+    assert "Qwen" not in provider.name
+
+
+def test_vision_provider_returns_none_when_nothing_multimodal_exists(monkeypatch):
+    from backend.core import llm as llm_module
+
+    monkeypatch.setattr(llm_module, "get_secret", lambda *a, **k: None)
+    monkeypatch.setattr("backend.core.amd.available", lambda: False)
+    assert llm_module.get_vision_provider() is None
+
+
+def test_offline_mode_has_no_vision_provider():
+    from backend.core.llm import get_vision_provider
+
+    assert get_vision_provider(offline=True) is None
+
+
+def test_inspection_is_skipped_when_no_vision_provider(monkeypatch):
+    """Missing vision must degrade the draft, never abort it."""
+    monkeypatch.setattr(curator, "get_vision_provider", lambda: None)
+    assert asyncio.run(curator.inspect_assets(["data:image/png;base64,AAA"])) == ""
+
+
+# ---------------------------------------------------------------- #
+# Multimodal payload construction                                   #
+# ---------------------------------------------------------------- #
+
+
+def test_data_urls_become_gemini_inline_parts():
+    from backend.core.llm import _as_inline_data
+
+    part = _as_inline_data("data:image/png;base64,QUJD")
+    assert part == {"mimeType": "image/png", "data": "QUJD"}
+
+
+def test_remote_urls_are_not_fetched_server_side():
+    """Fetching an operator-supplied URL server-side is a forgery vector."""
+    from backend.core.llm import _as_inline_data
+
+    assert _as_inline_data("https://example.com/plan.png") is None
+
+
+def test_non_base64_data_urls_are_rejected():
+    from backend.core.llm import _as_inline_data
+
+    assert _as_inline_data("data:text/plain,hello") is None

@@ -54,6 +54,18 @@ AMD_MODEL_ANALYST = get_secret("AMD_MODEL_ANALYST", "MiniCPM5-2B")
 # Cover letters and VIP content — agents/tailor.py
 AMD_MODEL_TAILOR = get_secret("AMD_MODEL_TAILOR", "DeepSeek-V4-Flash-0731")
 
+# Narrative synthesis for the Portfolio Studio. Deliberately the largest
+# model in the catalogue rather than the cheapest: a case study is written
+# once, read by recruiters for years, and must sustain a long architectural
+# argument without drifting. DeepSeek-V4-Flash-0731 is 284B MoE with a 1M
+# context, so the full brief plus asset observations fit in one turn.
+AMD_MODEL_CURATOR = get_secret("AMD_MODEL_CURATOR", "DeepSeek-V4-Flash-0731")
+
+# Asset inspection needs a genuinely multimodal model. AMD_MODEL_VISION is
+# a TEXT-only model used for DOM extraction, so it cannot be reused here.
+# Gemini is the default because it is multimodal on a key we already hold.
+CURATOR_VISION_MODEL = get_secret("CURATOR_VISION_MODEL", "gemini-3-flash-preview")
+
 # Origins allowed to call this API. The frontend normally reaches the backend
 # through a same-origin proxy, so this stays narrow.
 ALLOWED_ORIGINS = [
