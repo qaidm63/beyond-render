@@ -184,9 +184,12 @@ export interface SynthesisRequest {
   technicalDrawings?: string[];
   projectId?: string;
   inspectAssets?: boolean;
+  interrogation?: InterrogationAnswer[];
+  assetObservations?: string | null;
 }
 
 export interface SynthesisResponse {
+  provenance: ProvenanceReport;
   project: ProjectEvidence;
   projectId: string;
   isNew: boolean;
@@ -204,6 +207,111 @@ export interface SaveResponse {
   embedding: { embedded: boolean; reason?: string; model?: string };
   warnings: string[];
   totalProjects: number;
+}
+
+export interface InterrogationAnswer {
+  question: string;
+  answer: string;
+}
+
+export interface Question {
+  id: string;
+  question: string;
+  rationale: string;
+  targets: string;
+}
+
+export interface InterrogationResponse {
+  questions: Question[];
+  assetObservations: string;
+  measuredFacts: string[];
+  generator: string;
+}
+
+export interface ProvenanceFinding {
+  severity: 'critical' | 'warning';
+  kind: string;
+  claim: string;
+  field: string;
+  message: string;
+}
+
+export interface ProvenanceReport {
+  clean: boolean;
+  criticalCount: number;
+  warningCount: number;
+  findings: ProvenanceFinding[];
+  checkedFields: string[];
+}
+
+export interface JobScore {
+  jobId: string | null;
+  title: string;
+  company: string;
+  fitScore: number;
+  currentScore: number | null;
+  delta: number | null;
+}
+
+export interface FitnessReport {
+  medianScore: number;
+  bestScore: number;
+  wouldPassCount: number;
+  sampleSize: number;
+  threshold: number;
+  model: string;
+  topMatches: JobScore[];
+  biggestGains: JobScore[];
+  note: string | null;
+  databaseError?: string | null;
+}
+
+export interface CoverageGap {
+  capability: string;
+  demandCount: number;
+  evidence: string;
+  recommendedProject: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface CoverageReport {
+  gaps: CoverageGap[];
+  summary: string;
+  sampleSize: number;
+  threshold: number;
+  scoreRange: [number, number] | null;
+  note: string | null;
+  generator: string;
+  databaseError?: string | null;
+}
+
+export interface VariantResult {
+  stance: string;
+  project: ProjectEvidence;
+  fitness: FitnessReport;
+}
+
+export interface VariantComparison {
+  variants: VariantResult[];
+  winner: string | null;
+  margin: number;
+  note: string | null;
+  projectId: string;
+  assetObservations: string;
+}
+
+export interface AssetFacts {
+  kind: string;
+  mime: string | null;
+  byteSize: number | null;
+  pageCount: number | null;
+  sheetSize: string | null;
+  orientation: string | null;
+  title: string | null;
+  producer: string | null;
+  pixelWidth: number | null;
+  pixelHeight: number | null;
+  notes: string[];
 }
 
 export interface KeyHealth {
@@ -336,6 +444,34 @@ export const api = {
       `/portfolio/reembed/${encodeURIComponent(projectId)}`,
       { method: 'POST' },
     ),
+  /** Questions that pull out reasoning the operator did not volunteer. */
+  interrogateProject: (body: SynthesisRequest) =>
+    request<InterrogationResponse>('/portfolio/interrogate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** Score a draft against live postings before committing to it. */
+  projectFitness: (project: ProjectEvidence, nearMissOnly = false) =>
+    request<FitnessReport>('/portfolio/fitness', {
+      method: 'POST',
+      body: JSON.stringify({ project, nearMissOnly }),
+    }),
+  coverageGaps: () => request<CoverageReport>('/portfolio/coverage'),
+  compareVariants: (body: SynthesisRequest & { stances?: string[] }) =>
+    request<VariantComparison>('/portfolio/variants', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  checkProvenance: (project: ProjectEvidence, payload: Record<string, unknown>) =>
+    request<ProvenanceReport>('/portfolio/provenance', {
+      method: 'POST',
+      body: JSON.stringify({ project, payload }),
+    }),
+  assetFacts: (assets: string[]) =>
+    request<{ facts: AssetFacts[]; count: number }>('/portfolio/assets/facts', {
+      method: 'POST',
+      body: JSON.stringify({ assets }),
+    }),
   deleteProject: (projectId: string) =>
     request<{ ok: boolean; warnings: string[] }>(
       `/portfolio/projects/${encodeURIComponent(projectId)}`,

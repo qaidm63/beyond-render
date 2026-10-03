@@ -26,6 +26,7 @@ import logging
 import re
 from typing import Any
 
+from backend.core.assets import describe_assets
 from backend.core.llm import LLMProvider, get_llm_provider, get_vision_provider
 from backend.core.schemas import (
     ProjectCategory,
@@ -156,12 +157,26 @@ def build_brief(payload: dict[str, Any]) -> str:
     add("Spatial notes", payload.get("spatialNotes"))
     add("Additional notes", payload.get("notes"))
 
+    # Answers to the Evidence Interrogator carry more signal than any other
+    # field: they are the operator explaining their own reasoning.
+    for answer in payload.get("interrogation") or []:
+        if not isinstance(answer, dict):
+            continue
+        question = str(answer.get("question") or "").strip()
+        response = str(answer.get("answer") or "").strip()
+        if question and response:
+            lines.append(f"Q: {question}\n   A: {response}")
+
     if not lines:
         return "No metadata supplied."
     return "\n".join(lines)[:MAX_NOTE_CHARS]
 
 
-def build_prompt(payload: dict[str, Any], observations: str | None = None) -> str:
+def build_prompt(
+    payload: dict[str, Any],
+    observations: str | None = None,
+    measured: str | None = None,
+) -> str:
     """Assemble the full synthesis prompt."""
     sections = [
         "Synthesise a case study for the project below.",
@@ -169,6 +184,14 @@ def build_prompt(payload: dict[str, Any], observations: str | None = None) -> st
         "## Operator brief (authoritative facts)",
         build_brief(payload),
     ]
+
+    if measured and measured.strip():
+        # Measured file properties cannot be wrong, unlike a visual reading.
+        sections += [
+            "",
+            "## Measured asset properties (read from the files; treat as fact)",
+            measured.strip()[:MAX_NOTE_CHARS],
+        ]
 
     if observations and observations.strip():
         sections += [
@@ -181,6 +204,16 @@ def build_prompt(payload: dict[str, Any], observations: str | None = None) -> st
             "",
             "## Asset observations",
             "None supplied. Reason only from the brief above.",
+        ]
+
+    stance = str(payload.get("_stance") or "").strip()
+    if stance:
+        sections += [
+            "",
+            "## Narrative emphasis",
+            stance,
+            "This changes which facts you lead with. It does not licence "
+            "new facts, and every truthfulness rule above still applies.",
         ]
 
     sections += [
@@ -357,16 +390,24 @@ async def synthesise(
     llm: LLMProvider | None = None,
     vision: LLMProvider | None = None,
     assets: list[str] | None = None,
+    observations: str | None = None,
 ) -> tuple[ProjectEvidence, str]:
     """
     Produce a draft case study. Returns (project, asset observations).
 
     The project is NOT persisted here — saving is a separate, explicit step.
+
+    ``observations`` may be supplied to reuse an earlier inspection. A/B
+    variants rely on this: both framings must see the identical reading of
+    the assets, or the comparison measures vision noise, not framing.
     """
-    observations = await inspect_assets(assets or [], llm=vision)
+    if observations is None:
+        observations = await inspect_assets(assets or [], llm=vision)
+
+    measured = describe_assets(assets or [])
 
     llm = llm or get_llm_provider(role="curator")
-    prompt = build_prompt(payload, observations)
+    prompt = build_prompt(payload, observations, measured)
     raw = await llm.agenerate(prompt, system=SYNTHESIS_SYSTEM)
 
     project = to_project(parse_synthesis(raw), project_id=project_id, payload=payload)

@@ -11,14 +11,31 @@ import {
   Plus,
   PencilLine,
   CheckCircle2,
+  HelpCircle,
+  Target,
+  Compass,
+  GitCompare,
 } from 'lucide-react';
 import {
   api,
   ApiError,
+  type AssetFacts,
+  type CoverageReport,
+  type FitnessReport,
   type PortfolioEntry,
+  type ProvenanceReport,
+  type Question,
   type SynthesisRequest,
+  type VariantComparison,
 } from '@/lib/api';
 import type { ProjectEvidence } from '@/types';
+import {
+  AssetFactsPanel,
+  CoveragePanel,
+  FitnessPanel,
+  InterrogationPanel,
+  ProvenancePanel,
+} from './portfolio/panels';
 
 /**
  * Portfolio Studio — generative case-study management.
@@ -37,7 +54,7 @@ const ROLES = ['Solo', 'Lead', 'Contributor'];
 // Base64 inflates by ~33% and the whole form travels in one JSON body.
 const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 
-type Mode = 'create' | 'manage';
+type Mode = 'create' | 'manage' | 'strategy';
 
 const EMPTY_FORM: SynthesisRequest = {
   title: '',
@@ -224,6 +241,17 @@ export default function PortfolioStudio() {
   const [synthesising, setSynthesising] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [provenanceReport, setProvenanceReport] = useState<ProvenanceReport | null>(null);
+  const [fitness, setFitness] = useState<FitnessReport | null>(null);
+  const [coverage, setCoverage] = useState<CoverageReport | null>(null);
+  const [comparison, setComparison] = useState<VariantComparison | null>(null);
+  const [assetFacts, setAssetFacts] = useState<AssetFacts[]>([]);
+  const [interrogating, setInterrogating] = useState(false);
+  const [scoring, setScoring] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const [coverageLoading, setCoverageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -276,10 +304,10 @@ export default function PortfolioStudio() {
       else accepted.push(dataUrl);
     }
 
-    patch({
-      images: [...(form.images ?? []), ...accepted],
-      technicalDrawings: [...(form.technicalDrawings ?? []), ...drawings],
-    });
+    const nextImages = [...(form.images ?? []), ...accepted];
+    const nextDrawings = [...(form.technicalDrawings ?? []), ...drawings];
+    patch({ images: nextImages, technicalDrawings: nextDrawings });
+    void measureAssets([...nextImages, ...nextDrawings]);
 
     if (rejected.length) {
       setError(
@@ -297,6 +325,117 @@ export default function PortfolioStudio() {
 
   /* -------- actions -------- */
 
+  /** The request body every generative endpoint shares. */
+  function requestBody(): SynthesisRequest {
+    return {
+      ...form,
+      interrogation: questions
+        .map((q) => ({ question: q.question, answer: answers[q.id] ?? '' }))
+        .filter((a) => a.answer.trim().length > 0),
+      assetObservations: observations || null,
+    };
+  }
+
+  async function interrogate() {
+    if (!form.title.trim()) {
+      setError('A working title is required first.');
+      return;
+    }
+    setInterrogating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.interrogateProject(requestBody());
+      setQuestions(result.questions);
+      if (result.assetObservations) setObservations(result.assetObservations);
+      setNotice(
+        result.questions.length > 0
+          ? `${result.questions.length} questions. Answering them is the single biggest lever on the result.`
+          : 'No questions could be generated — fill the form and synthesise directly.',
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? `Interrogation failed: ${err.message}`
+          : 'Interrogation failed.',
+      );
+    } finally {
+      setInterrogating(false);
+    }
+  }
+
+  async function measureAssets(all: string[]) {
+    if (all.length === 0) {
+      setAssetFacts([]);
+      return;
+    }
+    try {
+      const result = await api.assetFacts(all);
+      setAssetFacts(result.facts);
+    } catch {
+      // Measurement is a convenience; its failure must not surface as an error.
+      setAssetFacts([]);
+    }
+  }
+
+  async function scoreDraft() {
+    if (!draft) return;
+    setScoring(true);
+    setError(null);
+    try {
+      setFitness(await api.projectFitness(draft));
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? `Scoring failed: ${err.message}` : 'Scoring failed.',
+      );
+    } finally {
+      setScoring(false);
+    }
+  }
+
+  async function runComparison() {
+    if (!form.title.trim()) {
+      setError('A working title is required first.');
+      return;
+    }
+    setComparing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.compareVariants(requestBody());
+      setComparison(result);
+      if (result.assetObservations) setObservations(result.assetObservations);
+      setNotice(
+        result.note ??
+          `"${result.winner}" framing scores ${result.margin.toFixed(1)} points higher. Pick one to continue editing.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? `Comparison failed: ${err.message}`
+          : 'Comparison failed.',
+      );
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  async function loadCoverage() {
+    setCoverageLoading(true);
+    setError(null);
+    try {
+      setCoverage(await api.coverageGaps());
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? `Gap analysis failed: ${err.message}`
+          : 'Gap analysis failed.',
+      );
+    } finally {
+      setCoverageLoading(false);
+    }
+  }
+
   async function synthesise() {
     if (!form.title.trim()) {
       setError('A working title is required before synthesis.');
@@ -306,10 +445,14 @@ export default function PortfolioStudio() {
     setError(null);
     setNotice(null);
     try {
-      const result = await api.synthesizeProject(form);
+      const result = await api.synthesizeProject(requestBody());
       setDraft(result.project);
       setObservations(result.assetObservations);
       setGenerator(result.generator);
+      setProvenanceReport(result.provenance);
+      setComparison(null);
+      // The old score belongs to the previous draft; showing it would lie.
+      setFitness(null);
       setNotice(
         `Draft generated by ${result.generator}. Nothing has been saved yet.`,
       );
@@ -344,6 +487,12 @@ export default function PortfolioStudio() {
       if (result.warnings.length) setError(result.warnings.join(' · '));
       setDraft(null);
       setForm(EMPTY_FORM);
+      setQuestions([]);
+      setAnswers({});
+      setProvenanceReport(null);
+      setFitness(null);
+      setComparison(null);
+      setAssetFacts([]);
       await loadProjects();
       setMode('manage');
     } catch (err) {
@@ -449,6 +598,19 @@ export default function PortfolioStudio() {
             }`}
           >
             <PencilLine className="w-3.5 h-3.5" /> Manage ({entries.length})
+          </button>
+          <button
+            onClick={() => {
+              setMode('strategy');
+              if (!coverage) void loadCoverage();
+            }}
+            className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition ${
+              mode === 'strategy'
+                ? 'bg-amber-500/15 text-amber-300'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" /> Strategy
           </button>
         </div>
       </header>
@@ -647,6 +809,33 @@ export default function PortfolioStudio() {
               </div>
             )}
 
+            {assetFacts.length > 0 && <AssetFactsPanel facts={assetFacts} />}
+
+            {/* Interrogation precedes synthesis: the answers are the single
+                biggest lever on output quality. */}
+            <button
+              onClick={() => void interrogate()}
+              disabled={interrogating || !form.title.trim()}
+              className="w-full flex items-center justify-center gap-2 border border-sky-800/50 hover:border-sky-600 text-sky-300 text-sm rounded-lg px-4 py-2.5 transition disabled:opacity-40"
+            >
+              {interrogating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <HelpCircle className="w-4 h-4" />
+              )}
+              {questions.length > 0
+                ? 'Ask me different questions'
+                : 'Interrogate my evidence first'}
+            </button>
+
+            <InterrogationPanel
+              questions={questions}
+              answers={answers}
+              onAnswer={(id, value) =>
+                setAnswers((cur) => ({ ...cur, [id]: value }))
+              }
+            />
+
             <button
               onClick={() => void synthesise()}
               disabled={synthesising || !form.title.trim()}
@@ -659,7 +848,70 @@ export default function PortfolioStudio() {
               )}
               {draft ? 'Refine with AI' : 'Generate & Synthesise with AI'}
             </button>
+
+            <button
+              onClick={() => void runComparison()}
+              disabled={comparing || !form.title.trim()}
+              className="w-full flex items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-600 text-zinc-400 text-xs rounded-lg px-4 py-2 transition disabled:opacity-40"
+            >
+              {comparing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <GitCompare className="w-3.5 h-3.5" />
+              )}
+              A/B two framings and score both
+            </button>
           </div>
+
+          {comparison && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+                Framing comparison
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {comparison.variants.map((variant) => (
+                  <div
+                    key={variant.stance}
+                    className={`border rounded-xl p-4 space-y-3 ${
+                      comparison.winner === variant.stance && comparison.margin >= 1
+                        ? 'border-emerald-800/60 bg-emerald-950/10'
+                        : 'border-zinc-800 bg-zinc-950/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs text-zinc-300 capitalize">
+                        {variant.stance}
+                      </h4>
+                      <span className="text-sm tabular-nums text-amber-300">
+                        {variant.fitness.medianScore.toFixed(1)}
+                      </span>
+                    </div>
+                    {variant.project.identity.tagline && (
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        {variant.project.identity.tagline}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-zinc-500 leading-relaxed line-clamp-4">
+                      {variant.project.decisionLog.decision}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setDraft(variant.project);
+                        setFitness(variant.fitness);
+                        setComparison(null);
+                        setNotice(
+                          `Loaded the ${variant.stance} framing. Edit it below, then save.`,
+                        );
+                      }}
+                      className="w-full text-[11px] border border-zinc-800 hover:border-amber-600/60 text-zinc-400 hover:text-amber-300 rounded-lg py-1.5 transition"
+                    >
+                      Continue with this one
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {observations && (
             <details className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-4">
@@ -674,7 +926,25 @@ export default function PortfolioStudio() {
 
           {draft && (
             <>
+              {provenanceReport && <ProvenancePanel report={provenanceReport} />}
+
               <PreviewCard project={draft} onChange={setDraft} />
+
+              <button
+                onClick={() => void scoreDraft()}
+                disabled={scoring}
+                className="w-full flex items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-600 text-zinc-400 text-xs rounded-lg px-4 py-2 transition disabled:opacity-40"
+              >
+                {scoring ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Target className="w-3.5 h-3.5" />
+                )}
+                {fitness ? 'Re-score against live postings' : 'Score against live postings'}
+              </button>
+
+              {fitness && <FitnessPanel report={fitness} />}
+
               <button
                 onClick={() => void save()}
                 disabled={saving}
@@ -694,6 +964,41 @@ export default function PortfolioStudio() {
                 {generator && ` Drafted by ${generator}.`}
               </p>
             </>
+          )}
+        </div>
+      ) : mode === 'strategy' ? (
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs text-zinc-500 max-w-md leading-relaxed">
+              Which capability keeps costing you near-miss postings. Read from
+              the Analyst's own rejections, so it reflects the market the Scout
+              is actually sweeping — not intuition.
+            </p>
+            <button
+              onClick={() => void loadCoverage()}
+              disabled={coverageLoading}
+              className="text-[11px] flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-40 shrink-0"
+            >
+              {coverageLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Re-analyse
+            </button>
+          </div>
+
+          {coverageLoading && !coverage ? (
+            <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" /> Reading near-miss
+              postings…
+            </div>
+          ) : coverage ? (
+            <CoveragePanel report={coverage} />
+          ) : (
+            <p className="text-sm text-zinc-500 text-center py-10">
+              No analysis yet.
+            </p>
           )}
         </div>
       ) : (

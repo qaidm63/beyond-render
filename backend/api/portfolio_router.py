@@ -7,6 +7,12 @@ Portfolio Studio API — generative case-study management.
     POST /api/portfolio/reembed     re-embed one project without regenerating
     DELETE /api/portfolio/projects/{id}
 
+    POST /api/portfolio/interrogate  questions that sharpen the brief
+    POST /api/portfolio/fitness      score a draft against live postings
+    POST /api/portfolio/variants     A/B two narrative framings, scored
+    GET  /api/portfolio/coverage     which capability costs you near misses
+    POST /api/portfolio/assets/facts measured properties of uploaded files
+
 Separation of concerns: `synthesize` never touches disk or the database, and
 `save` never calls a language model. An operator can therefore regenerate as
 often as they like at zero risk to the source of truth, and can save a
@@ -22,10 +28,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.agents import curator
+from backend.agents import curator, interrogator, provenance, strategist
 from backend.core import portfolio as portfolio_module
 from backend.core import repository
 from backend.core.auth import Operator, current_operator
+from backend.core.assets import inspect_asset
 from backend.core.embeddings import get_embedding_provider
 from backend.core.llm import get_llm_provider
 from backend.core.portfolio import content_hash, load_portfolio
@@ -39,6 +46,11 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # ---------------------------------------------------------------- #
 # Request models                                                    #
 # ---------------------------------------------------------------- #
+
+
+class InterrogationAnswer(BaseModel):
+    question: str = Field(max_length=1000)
+    answer: str = Field(default="", max_length=4000)
 
 
 class SynthesisRequest(BaseModel):
@@ -60,6 +72,33 @@ class SynthesisRequest(BaseModel):
     # Supplied when refining an existing project; keeps the id stable.
     projectId: str | None = None
     inspectAssets: bool = True
+    # Answers from the Evidence Interrogator, folded into the brief as
+    # authoritative facts.
+    interrogation: list[InterrogationAnswer] = Field(default_factory=list)
+    # Reuse an earlier vision pass instead of paying for another.
+    assetObservations: str | None = None
+
+
+class FitnessRequest(BaseModel):
+    """Score a draft, or an arbitrary document, against live postings."""
+
+    project: ProjectEvidence | None = None
+    document: str | None = None
+    nearMissOnly: bool = False
+
+
+class VariantRequest(SynthesisRequest):
+    stances: list[str] = Field(default_factory=lambda: ["computational", "urban"])
+
+
+class ProvenanceRequest(BaseModel):
+    project: ProjectEvidence
+    payload: dict[str, Any] = Field(default_factory=dict)
+    observations: str = ""
+
+
+class AssetFactsRequest(BaseModel):
+    assets: list[str] = Field(default_factory=list, max_length=40)
 
 
 class SaveRequest(BaseModel):
@@ -192,6 +231,7 @@ async def synthesize(
             payload,
             project_id=project_id,
             assets=assets,
+            observations=body.assetObservations,
         )
     except curator.SynthesisError as exc:
         # The model replied, but not usably. 502: an upstream content problem,
@@ -202,6 +242,10 @@ async def synthesize(
             status_code=502, detail=f"Synthesis failed: {exc}"
         ) from exc
 
+    # Verified on every draft rather than on demand: a guard the operator
+    # has to remember to run is a guard that does not run.
+    report = provenance.verify(project, payload, observations)
+
     return {
         "project": project.model_dump(mode="json"),
         "projectId": project_id,
@@ -209,6 +253,7 @@ async def synthesize(
         "assetObservations": observations,
         "generator": get_llm_provider(role="curator").name,
         "sourceDocument": project.to_embedding_document(),
+        "provenance": report.to_dict(),
     }
 
 
@@ -325,3 +370,199 @@ async def delete_project(
         warnings.append(f"Database delete failed: {exc}")
 
     return {"ok": True, "projectId": project_id, "warnings": warnings}
+
+
+# ---------------------------------------------------------------- #
+# Strategy layer                                                    #
+# ---------------------------------------------------------------- #
+
+
+def _threshold() -> float:
+    """The live matching threshold, falling back to the Blueprint default."""
+    try:
+        config = repository.read_config()
+    except Exception as exc:  # noqa: BLE001 - never fail an analysis on this
+        logger.warning("Could not read the matching threshold: %s", exc)
+        return 85.0
+    return float(getattr(config, "matchingThreshold", 85) or 85) if config else 85.0
+
+
+def _jobs(limit: int = 300) -> tuple[list[dict[str, Any]], str | None]:
+    """Read the posting corpus. Returns (rows, error) — never raises."""
+    try:
+        return repository.list_jobs(limit=limit), None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read jobs: %s", exc)
+        return [], str(exc)
+
+
+@router.post("/interrogate")
+async def interrogate(
+    body: SynthesisRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Ask the operator the questions that would most improve the case study.
+
+    Returns an empty list rather than an error when questions cannot be
+    produced: the form must stay usable without this step.
+    """
+    assets = (body.images + body.technicalDrawings) if body.inspectAssets else []
+    payload = body.model_dump()
+
+    questions, observations = await interrogator.interrogate(
+        payload, assets=assets, observations=body.assetObservations
+    )
+
+    return {
+        "questions": [q.to_dict() for q in questions],
+        "assetObservations": observations,
+        "measuredFacts": [
+            inspect_asset(asset).summary() for asset in assets[:12]
+        ],
+        "generator": get_llm_provider(role="curator").name,
+    }
+
+
+@router.post("/fitness")
+async def fitness(
+    body: FitnessRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Score a draft against real postings before it is saved.
+
+    This is the number that matters: not whether the prose reads well, but
+    whether the vector lands near the work the operator actually wants.
+    """
+    if body.project is None and not (body.document or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Supply either a project or a document to score.",
+        )
+
+    document = (
+        body.project.to_embedding_document()
+        if body.project is not None
+        else (body.document or "")
+    )
+
+    threshold = _threshold()
+    rows, error = _jobs()
+    sample = strategist.sample_jobs(
+        rows, threshold, near_miss_only=body.nearMissOnly
+    )
+
+    try:
+        report = await asyncio.to_thread(
+            strategist.score_document,
+            document,
+            sample,
+            threshold=threshold,
+            provider=get_embedding_provider(),
+        )
+    except strategist.StrategistError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    payload = report.to_dict()
+    payload["databaseError"] = error
+    return payload
+
+
+@router.get("/coverage")
+async def coverage(
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Which capability keeps costing near-miss postings.
+
+    Reads the Analyst's own rejections, so the answer is grounded in the
+    market the Scout is actually sweeping rather than in intuition.
+    """
+    threshold = _threshold()
+    rows, error = _jobs()
+
+    try:
+        report = await strategist.coverage_gaps(rows, threshold=threshold)
+    except strategist.StrategistError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    payload = report.to_dict()
+    payload["databaseError"] = error
+    return payload
+
+
+@router.post("/variants")
+async def variants(
+    body: VariantRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Synthesise the same facts under two framings and score both.
+
+    Both variants share one asset inspection so the comparison measures
+    framing, not vision noise.
+    """
+    existing = {p.projectId for p in load_portfolio()}
+    project_id = body.projectId or portfolio_module.unique_project_id(
+        body.title, existing
+    )
+    assets = (body.images + body.technicalDrawings) if body.inspectAssets else []
+    payload = body.model_dump(exclude={"stances"})
+
+    observations = body.assetObservations
+    if observations is None:
+        observations = await curator.inspect_assets(assets)
+
+    threshold = _threshold()
+    rows, error = _jobs()
+    sample = strategist.sample_jobs(rows, threshold)
+
+    try:
+        comparison = await strategist.compare_variants(
+            payload,
+            project_id=project_id,
+            jobs=sample,
+            threshold=threshold,
+            observations=observations,
+            stances=body.stances,
+        )
+    except strategist.StrategistError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    result = comparison.to_dict()
+    result["projectId"] = project_id
+    result["assetObservations"] = observations
+    result["databaseError"] = error
+    return result
+
+
+@router.post("/provenance")
+async def check_provenance(
+    body: ProvenanceRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Re-verify a project after the operator has edited it by hand.
+
+    Advisory by design: it never blocks a save. A guard that produced false
+    refusals would simply be switched off.
+    """
+    report = provenance.verify(body.project, body.payload, body.observations)
+    return report.to_dict()
+
+
+@router.post("/assets/facts")
+async def asset_facts(
+    body: AssetFactsRequest,
+    _operator: Operator = Depends(current_operator),
+) -> dict[str, Any]:
+    """
+    Measured properties of uploaded files: page counts, sheet sizes,
+    producing application, image geometry.
+
+    These are measurements, not interpretations, so they are safe to treat
+    as fact during synthesis.
+    """
+    facts = [vars(inspect_asset(asset)) for asset in body.assets]
+    return {"facts": facts, "count": len(facts)}
