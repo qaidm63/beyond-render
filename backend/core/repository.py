@@ -345,3 +345,11 @@ def telemetry_snapshot() -> dict[str, Any]:
         "recruiterClicks": _count("telemetry_events", event_type="pitch_view"),
         "totalPitches": _count("pitches"),
     }
+
+
+def delete_project_row(project_id: str) -> None:
+    """
+    Remove a project row. `project_embeddings` cascades via its foreign key,
+    so the vector disappears with it.
+    """
+    get_supabase().table("projects").delete().eq("project_id", project_id).execute()

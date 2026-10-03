@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Radar as RadarIcon, SlidersHorizontal, FlaskConical, Activity, LogOut } from 'lucide-react';
+import { Radar as RadarIcon, SlidersHorizontal, FlaskConical, Activity, LibraryBig, LogOut } from 'lucide-react';
 import { useOperator } from '@/lib/useOperator';
 import Radar from './modules/Radar';
 import SwarmConfigurator from './modules/SwarmConfigurator';
 import PitchStudio from './modules/PitchStudio';
 import Telemetry from './modules/Telemetry';
+import PortfolioStudio from './modules/PortfolioStudio';
 
 /** Command Center — Blueprint § 5. */
 
@@ -18,6 +19,7 @@ const TABS = [
   },
   { key: 'pitch', label: 'Pitch Studio', icon: FlaskConical, render: () => <PitchStudio /> },
   { key: 'telemetry', label: 'Telemetry', icon: Activity, render: () => <Telemetry /> },
+  { key: 'portfolio', label: 'Portfolio Studio', icon: LibraryBig, render: () => <PortfolioStudio /> },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];

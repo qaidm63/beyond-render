@@ -26,6 +26,8 @@ export interface ProjectIdentity {
   status: ProjectStatus;
   /** Discrete deliverables — these are embedded for semantic matching. */
   scope: string[];
+  /** One-line systemic position. Added by the Portfolio Studio. */
+  tagline?: string | null;
 }
 
 /**
@@ -43,12 +45,22 @@ export interface EvidenceLayer {
   technicalDrawings: string[];
 }
 
+export interface SpatialFramework {
+  circulationStrategy: string;
+  materialityAndAtmosphere: string;
+  sustainabilityFramework: string;
+}
+
 export interface ProjectEvidence {
   projectId: string;
   identity: ProjectIdentity;
   decisionLog: DecisionLog;
   evidenceLayer: EvidenceLayer;
   softwareStack: string[];
+  /* --- Portfolio Studio additions. Optional: the four original projects
+     predate them and must keep rendering. --- */
+  spatialFramework?: SpatialFramework | null;
+  recruiterPitch?: string | null;
 }
 
 /* ------------------------------------------------------------------ */

@@ -29,12 +29,39 @@ class ProjectIdentity(BaseModel):
     category: ProjectCategory
     status: ProjectStatus
     scope: list[str] = Field(default_factory=list)
+    # Added by the Portfolio Studio. Optional so the four pre-existing
+    # projects keep validating without a migration.
+    tagline: str | None = None
 
 
 class DecisionLog(BaseModel):
     challenge: str
     decision: str
     outcome: str
+
+
+class SpatialFramework(BaseModel):
+    """
+    The design reasoning a recruiter actually interrogates.
+
+    Separate from `decisionLog` on purpose: the decision log is one narrative
+    arc (problem -> move -> result), while this is the standing systemic
+    position of the project.
+    """
+
+    circulationStrategy: str = ""
+    materialityAndAtmosphere: str = ""
+    sustainabilityFramework: str = ""
+
+    def is_populated(self) -> bool:
+        return any(
+            field.strip()
+            for field in (
+                self.circulationStrategy,
+                self.materialityAndAtmosphere,
+                self.sustainabilityFramework,
+            )
+        )
 
 
 class EvidenceLayer(BaseModel):
@@ -48,6 +75,9 @@ class ProjectEvidence(BaseModel):
     decisionLog: DecisionLog
     evidenceLayer: EvidenceLayer
     softwareStack: list[str] = Field(default_factory=list)
+    # --- Portfolio Studio additions (all optional, all backward-compatible) ---
+    spatialFramework: SpatialFramework | None = None
+    recruiterPitch: str | None = None
 
     def to_embedding_document(self) -> str:
         """
@@ -56,18 +86,34 @@ class ProjectEvidence(BaseModel):
         The decision log is weighted first because engineering judgement is the
         highest-signal content for matching against job descriptions.
         """
-        return "\n".join(
-            [
-                f"Project: {self.identity.title}",
-                f"Category: {self.identity.category.value}",
-                f"Status: {self.identity.status.value}",
-                f"Challenge: {self.decisionLog.challenge}",
-                f"Decision: {self.decisionLog.decision}",
-                f"Outcome: {self.decisionLog.outcome}",
-                "Scope: " + "; ".join(self.identity.scope),
-                "Software: " + ", ".join(self.softwareStack),
+        parts = [
+            f"Project: {self.identity.title}",
+            f"Category: {self.identity.category.value}",
+            f"Status: {self.identity.status.value}",
+            f"Challenge: {self.decisionLog.challenge}",
+            f"Decision: {self.decisionLog.decision}",
+            f"Outcome: {self.decisionLog.outcome}",
+            "Scope: " + "; ".join(self.identity.scope),
+            "Software: " + ", ".join(self.softwareStack),
+        ]
+
+        if self.identity.tagline:
+            parts.insert(1, f"Tagline: {self.identity.tagline}")
+
+        # Spatial reasoning is high-signal for matching, so it joins the
+        # document. Changing this text changes the content hash, which is
+        # exactly what should force a re-embed.
+        if self.spatialFramework and self.spatialFramework.is_populated():
+            parts += [
+                f"Circulation: {self.spatialFramework.circulationStrategy}",
+                f"Materiality: {self.spatialFramework.materialityAndAtmosphere}",
+                f"Sustainability: {self.spatialFramework.sustainabilityFramework}",
             ]
-        )
+
+        if self.recruiterPitch:
+            parts.append(f"Positioning: {self.recruiterPitch}")
+
+        return "\n".join(parts)
 
 
 class ScoutEngine(str, Enum):

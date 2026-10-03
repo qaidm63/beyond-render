@@ -26,6 +26,11 @@ Operator only (Supabase Auth, allowlisted):
   POST  /api/scheduler/run      trigger a scheduled-style sweep now
   POST  /api/ops/test-alert     verify the Telegram gateway
   GET   /api/keyring            AMD key pool health (masked)
+  GET   /api/portfolio/projects   case studies + embedding state
+  POST  /api/portfolio/synthesize draft a case study (no writes)
+  POST  /api/portfolio/save       file + projects + project_embeddings
+  POST  /api/portfolio/reembed/{id}
+  DEL   /api/portfolio/projects/{id}
 
 Run with:
     uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -46,6 +51,7 @@ from backend import scheduler as scheduler_module
 from backend.agents import ops, tailor
 from backend.agents.scout import dom_engine
 from backend.core import repository
+from backend.api.portfolio_router import router as portfolio_router
 from backend.core.auth import Operator, auth_configured, current_operator
 from backend.core.config import (
     ALLOWED_ORIGINS,
@@ -68,6 +74,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("shadow-matrix")
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION, docs_url="/api/docs")
+
+app.include_router(portfolio_router)
 
 app.add_middleware(
     CORSMiddleware,

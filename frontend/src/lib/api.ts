@@ -11,6 +11,7 @@
 
 import type {
   JobOpportunity,
+  ProjectEvidence,
   PipelineStage,
   Pitch,
   SearchConfiguration,
@@ -154,6 +155,57 @@ export interface DraftResponse {
  */
 export type ScheduledRunResult = Partial<SweepReport> & { error?: string };
 
+export interface PortfolioEntry {
+  project: ProjectEvidence;
+  embedded: boolean;
+  /** The text changed since it was embedded: matching uses a stale vector. */
+  stale: boolean;
+}
+
+export interface PortfolioList {
+  projects: PortfolioEntry[];
+  total: number;
+  embeddingModel: string;
+  databaseError: string | null;
+}
+
+export interface SynthesisRequest {
+  title: string;
+  category?: string;
+  status?: string;
+  teamRole?: string;
+  softwareStack?: string[];
+  location?: string;
+  area?: string;
+  constraints?: string;
+  spatialNotes?: string;
+  notes?: string;
+  images?: string[];
+  technicalDrawings?: string[];
+  projectId?: string;
+  inspectAssets?: boolean;
+}
+
+export interface SynthesisResponse {
+  project: ProjectEvidence;
+  projectId: string;
+  isNew: boolean;
+  assetObservations: string;
+  generator: string;
+  sourceDocument: string;
+}
+
+export interface SaveResponse {
+  ok: boolean;
+  created: boolean;
+  projectId: string;
+  fileWritten: boolean;
+  databasePersisted: boolean;
+  embedding: { embedded: boolean; reason?: string; model?: string };
+  warnings: string[];
+  totalProjects: number;
+}
+
 export interface KeyHealth {
   /** Masked, e.g. `rc-abc…1234`. Never the full credential. */
   label: string;
@@ -264,6 +316,31 @@ export const api = {
 
   scheduler: () => request<SchedulerState>('/scheduler'),
   keyring: () => request<KeyringState>('/keyring'),
+
+  /* ---- Portfolio Studio ---- */
+
+  portfolioProjects: () => request<PortfolioList>('/portfolio/projects'),
+  /** Drafts a case study. Writes nothing — review, then save. */
+  synthesizeProject: (body: SynthesisRequest) =>
+    request<SynthesisResponse>('/portfolio/synthesize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  saveProject: (project: ProjectEvidence, embed = true) =>
+    request<SaveResponse>('/portfolio/save', {
+      method: 'POST',
+      body: JSON.stringify({ project, embed }),
+    }),
+  reembedProject: (projectId: string) =>
+    request<{ ok: boolean; model: string }>(
+      `/portfolio/reembed/${encodeURIComponent(projectId)}`,
+      { method: 'POST' },
+    ),
+  deleteProject: (projectId: string) =>
+    request<{ ok: boolean; warnings: string[] }>(
+      `/portfolio/projects/${encodeURIComponent(projectId)}`,
+      { method: 'DELETE' },
+    ),
   runScheduledSweep: () =>
     request<ScheduledRunResult>('/scheduler/run', { method: 'POST' }),
   testAlert: () =>
