@@ -22,9 +22,9 @@ APP_VERSION = "1.0.0-phase4"
 
 # Gemini models. Supplied by the operator; defaults match the project brief.
 GEMINI_MODEL = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
-GEMINI_EMBEDDING_MODEL = get_secret("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+GEMINI_EMBEDDING_MODEL = get_secret("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
-# Dimensionality of `text-embedding-004`. CONFIRMED BY THE OPERATOR.
+# Dimensionality of `gemini-embedding-001`. CONFIRMED BY THE OPERATOR.
 #
 # This number is load-bearing in three places that must change together:
 #   1. here,

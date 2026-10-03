@@ -98,7 +98,7 @@ class GeminiEmbeddingProvider:
     """Embeddings via the Gemini API."""
 
     def __init__(self, model: str | None = None, timeout: float = 30.0) -> None:
-        self.model = model or GEMINI_EMBEDDING_MODEL or "text-embedding-004"
+        self.model = "gemini-embedding-001"
         self.name = f"gemini:{self.model}"
         self.dimensions = EMBEDDING_DIMENSIONS
         self._timeout = timeout
@@ -112,6 +112,7 @@ class GeminiEmbeddingProvider:
         payload = {
             "model": f"models/{self.model}",
             "content": {"parts": [{"text": text}]},
+            "outputDimensionality": self.dimensions,
         }
 
         try:
