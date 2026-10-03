@@ -29,6 +29,7 @@ import {
   type VariantComparison,
 } from '@/lib/api';
 import type { ProjectEvidence } from '@/types';
+import { useLanguage, type AdminDictionary } from '@/i18n';
 import {
   AssetFactsPanel,
   CoveragePanel,
@@ -47,14 +48,39 @@ import {
  *     not embedded is invisible to matching — a silent failure.
  */
 
-const CATEGORIES = ['Residential', 'Commercial', 'Urban Planning', 'Technical'];
-const STATUSES = ['Completed', 'In Progress', 'Concept'];
-const ROLES = ['Solo', 'Lead', 'Contributor'];
+/**
+ * Option values stay in English: they are persisted to the canonical file
+ * and validated against the backend enum. Only the visible label is
+ * translated, so switching language never rewrites stored data.
+ */
+const CATEGORIES: { value: string; key: keyof AdminDictionary }[] = [
+  { value: 'Residential', key: 'categoryResidential' },
+  { value: 'Commercial', key: 'categoryCommercial' },
+  { value: 'Urban Planning', key: 'categoryUrban' },
+  { value: 'Technical', key: 'categoryTechnical' },
+];
+const STATUSES: { value: string; key: keyof AdminDictionary }[] = [
+  { value: 'Completed', key: 'statusCompleted' },
+  { value: 'In Progress', key: 'statusInProgress' },
+  { value: 'Concept', key: 'statusConcept' },
+];
+const ROLES: { value: string; key: keyof AdminDictionary }[] = [
+  { value: 'Solo', key: 'roleSolo' },
+  { value: 'Lead', key: 'roleLead' },
+  { value: 'Contributor', key: 'roleContributor' },
+];
 
 // Base64 inflates by ~33% and the whole form travels in one JSON body.
 const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 
 type Mode = 'create' | 'manage' | 'strategy';
+
+/** Stance ids come from the backend in English; only the label flips. */
+function stanceLabel(stance: string | null, t: AdminDictionary): string {
+  if (stance === 'computational') return t.stanceComputational;
+  if (stance === 'urban') return t.stanceUrban;
+  return stance ?? '';
+}
 
 const EMPTY_FORM: SynthesisRequest = {
   title: '',
@@ -105,6 +131,7 @@ function PreviewCard({
   project: ProjectEvidence;
   onChange: (next: ProjectEvidence) => void;
 }) {
+  const { t } = useLanguage();
   const sf = project.spatialFramework;
 
   function patchDecision(key: 'challenge' | 'decision' | 'outcome', v: string) {
@@ -127,25 +154,29 @@ function PreviewCard({
     <div className="border border-amber-900/40 bg-amber-950/5 rounded-2xl p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-white font-medium">{project.identity.title}</h3>
+          <h3 className="text-white font-medium" dir="auto">
+            {project.identity.title}
+          </h3>
           {project.identity.tagline && (
             <p className="text-xs text-amber-400/80 mt-1">
               {project.identity.tagline}
             </p>
           )}
         </div>
-        <span className="text-[10px] font-mono text-zinc-500 border border-zinc-800 rounded px-2 py-1 shrink-0">
+        <span
+          className="text-[10px] font-mono text-zinc-500 border border-zinc-800 rounded px-2 py-1 shrink-0"
+          dir="ltr"
+        >
           {project.projectId}
         </span>
       </div>
 
       <p className="text-[10px] text-zinc-600">
-        Everything below is editable before saving. Verify any figure the model
-        produced against your own records.
+        {t.previewEditable}
       </p>
 
       <div className="grid gap-3">
-        <Field label="Challenge">
+        <Field label={t.labelChallenge}>
           <textarea
             rows={3}
             value={project.decisionLog.challenge}
@@ -153,7 +184,7 @@ function PreviewCard({
             className={inputClass}
           />
         </Field>
-        <Field label="Decision">
+        <Field label={t.labelDecision}>
           <textarea
             rows={3}
             value={project.decisionLog.decision}
@@ -161,7 +192,7 @@ function PreviewCard({
             className={inputClass}
           />
         </Field>
-        <Field label="Outcome">
+        <Field label={t.labelOutcome}>
           <textarea
             rows={3}
             value={project.decisionLog.outcome}
@@ -170,7 +201,7 @@ function PreviewCard({
           />
         </Field>
 
-        <Field label="Circulation strategy">
+        <Field label={t.labelCirculation}>
           <textarea
             rows={2}
             value={sf?.circulationStrategy ?? ''}
@@ -188,7 +219,7 @@ function PreviewCard({
             className={inputClass}
           />
         </Field>
-        <Field label="Sustainability framework">
+        <Field label={t.labelSustainability}>
           <textarea
             rows={2}
             value={sf?.sustainabilityFramework ?? ''}
@@ -198,7 +229,7 @@ function PreviewCard({
             className={inputClass}
           />
         </Field>
-        <Field label="Recruiter pitch">
+        <Field label={t.labelRecruiterPitch}>
           <textarea
             rows={2}
             value={project.recruiterPitch ?? ''}
@@ -255,6 +286,7 @@ export default function PortfolioStudio() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const { t, num, dir } = useLanguage();
 
   const loadProjects = useCallback(async () => {
     setListLoading(true);
@@ -262,11 +294,11 @@ export default function PortfolioStudio() {
       const data = await api.portfolioProjects();
       setEntries(data.projects);
       if (data.databaseError) {
-        setError(`Database unreachable: ${data.databaseError}`);
+        setError(`${t.studioDatabaseUnreachable}: ${data.databaseError}`);
       }
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : 'Failed to load projects.',
+        err instanceof ApiError ? err.message : t.studioLoadFailed,
       );
     } finally {
       setListLoading(false);
@@ -311,8 +343,8 @@ export default function PortfolioStudio() {
 
     if (rejected.length) {
       setError(
-        `Skipped ${rejected.length} file(s) over 4 MB: ${rejected.join(', ')}. ` +
-          'Compress them or host them and paste the URL.',
+        `${num(rejected.length)} ${t.assetsTooLarge}: ${rejected.join(', ')}. ` +
+          t.assetsTooLargeHint,
       );
     }
   }
@@ -338,7 +370,7 @@ export default function PortfolioStudio() {
 
   async function interrogate() {
     if (!form.title.trim()) {
-      setError('A working title is required first.');
+      setError(t.titleRequiredShort);
       return;
     }
     setInterrogating(true);
@@ -350,14 +382,14 @@ export default function PortfolioStudio() {
       if (result.assetObservations) setObservations(result.assetObservations);
       setNotice(
         result.questions.length > 0
-          ? `${result.questions.length} questions. Answering them is the single biggest lever on the result.`
-          : 'No questions could be generated — fill the form and synthesise directly.',
+          ? `${num(result.questions.length)} ${t.interrogateCount}`
+          : t.interrogateNone,
       );
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? `Interrogation failed: ${err.message}`
-          : 'Interrogation failed.',
+          ? `${t.interrogateFailed} ${err.message}`
+          : t.interrogateFailed,
       );
     } finally {
       setInterrogating(false);
@@ -386,7 +418,7 @@ export default function PortfolioStudio() {
       setFitness(await api.projectFitness(draft));
     } catch (err) {
       setError(
-        err instanceof ApiError ? `Scoring failed: ${err.message}` : 'Scoring failed.',
+        err instanceof ApiError ? `${t.fitnessFailed} ${err.message}` : t.fitnessFailed,
       );
     } finally {
       setScoring(false);
@@ -395,7 +427,7 @@ export default function PortfolioStudio() {
 
   async function runComparison() {
     if (!form.title.trim()) {
-      setError('A working title is required first.');
+      setError(t.titleRequiredShort);
       return;
     }
     setComparing(true);
@@ -407,13 +439,16 @@ export default function PortfolioStudio() {
       if (result.assetObservations) setObservations(result.assetObservations);
       setNotice(
         result.note ??
-          `"${result.winner}" framing scores ${result.margin.toFixed(1)} points higher. Pick one to continue editing.`,
+          `"${stanceLabel(result.winner, t)}" ${t.variantsHigher} ${num(
+            result.margin,
+            1,
+          )} ${t.variantsPointsHigher}`,
       );
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? `Comparison failed: ${err.message}`
-          : 'Comparison failed.',
+          ? `${t.variantsFailed} ${err.message}`
+          : t.variantsFailed,
       );
     } finally {
       setComparing(false);
@@ -428,8 +463,8 @@ export default function PortfolioStudio() {
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? `Gap analysis failed: ${err.message}`
-          : 'Gap analysis failed.',
+          ? `${t.coverageFailed} ${err.message}`
+          : t.coverageFailed,
       );
     } finally {
       setCoverageLoading(false);
@@ -438,7 +473,7 @@ export default function PortfolioStudio() {
 
   async function synthesise() {
     if (!form.title.trim()) {
-      setError('A working title is required before synthesis.');
+      setError(t.titleRequired);
       return;
     }
     setSynthesising(true);
@@ -454,13 +489,13 @@ export default function PortfolioStudio() {
       // The old score belongs to the previous draft; showing it would lie.
       setFitness(null);
       setNotice(
-        `Draft generated by ${result.generator}. Nothing has been saved yet.`,
+        `${t.draftGeneratedBy} ${result.generator}. ${t.nothingSavedYet}`,
       );
     } catch (err) {
       setError(
         err instanceof ApiError
           ? `Synthesis failed: ${err.message} (HTTP ${err.status})`
-          : 'Synthesis failed.',
+          : t.synthesisFailed,
       );
     } finally {
       setSynthesising(false);
@@ -475,13 +510,13 @@ export default function PortfolioStudio() {
     try {
       const result = await api.saveProject(draft, true);
       const bits = [
-        result.created ? 'Created' : 'Updated',
+        result.created ? t.saveCreated : t.saveUpdated,
         `${result.projectId}.`,
-        result.fileWritten ? 'File written.' : '',
-        result.databasePersisted ? 'Database updated.' : 'Database NOT updated.',
+        result.fileWritten ? t.saveFileWritten : '',
+        result.databasePersisted ? t.saveDbUpdated : t.saveDbNotUpdated,
         result.embedding.embedded
-          ? 'Embedded.'
-          : `Not embedded (${result.embedding.reason ?? 'unknown'}).`,
+          ? t.saveEmbedded
+          : `${t.saveNotEmbedded} (${result.embedding.reason ?? '—'}).`,
       ];
       setNotice(bits.filter(Boolean).join(' '));
       if (result.warnings.length) setError(result.warnings.join(' · '));
@@ -497,7 +532,7 @@ export default function PortfolioStudio() {
       setMode('manage');
     } catch (err) {
       setError(
-        err instanceof ApiError ? `Save failed: ${err.message}` : 'Save failed.',
+        err instanceof ApiError ? `${t.saveFailed} ${err.message}` : t.saveFailed,
       );
     } finally {
       setSaving(false);
@@ -510,11 +545,11 @@ export default function PortfolioStudio() {
     setNotice(null);
     try {
       await api.reembedProject(projectId);
-      setNotice(`Re-embedded ${projectId}.`);
+      setNotice(`${t.reembedDone} ${projectId}.`);
       await loadProjects();
     } catch (err) {
       setError(
-        err instanceof ApiError ? `Re-embed failed: ${err.message}` : 'Failed.',
+        err instanceof ApiError ? `${t.reembedFailed} ${err.message}` : t.reembedFailed,
       );
     } finally {
       setBusyId(null);
@@ -523,21 +558,18 @@ export default function PortfolioStudio() {
 
   async function remove(projectId: string) {
     if (
-      !window.confirm(
-        `Delete "${projectId}" from the portfolio file and the database? ` +
-          'This cannot be undone from the dashboard.',
-      )
+      !window.confirm(`${projectId}\n\n${t.deleteConfirm}`)
     ) {
       return;
     }
     setBusyId(projectId);
     try {
       await api.deleteProject(projectId);
-      setNotice(`Deleted ${projectId}.`);
+      setNotice(`${t.deleted} ${projectId}.`);
       await loadProjects();
     } catch (err) {
       setError(
-        err instanceof ApiError ? `Delete failed: ${err.message}` : 'Failed.',
+        err instanceof ApiError ? `${t.deleteFailed} ${err.message}` : t.deleteFailed,
       );
     } finally {
       setBusyId(null);
@@ -559,9 +591,7 @@ export default function PortfolioStudio() {
     });
     setDraft(p);
     setMode('create');
-    setNotice(
-      `Loaded ${p.projectId}. Edit directly, or press "Refine with AI" to regenerate.`,
-    );
+    setNotice(`${p.projectId} ${t.editLoaded}`);
   }
 
   const assetCount =
@@ -570,13 +600,11 @@ export default function PortfolioStudio() {
   /* -------- render -------- */
 
   return (
-    <section className="space-y-5 max-w-4xl">
+    <section className="space-y-5 max-w-4xl" dir={dir}>
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-white font-semibold">Portfolio Studio</h2>
-          <p className="text-xs text-zinc-500">
-            Synthesise case studies and keep the vector index in step.
-          </p>
+          <h2 className="text-white font-semibold">{t.studioTitle}</h2>
+          <p className="text-xs text-zinc-500">{t.studioSubtitle}</p>
         </div>
         <div className="flex gap-1 border border-zinc-800 rounded-lg p-1 shrink-0">
           <button
@@ -587,7 +615,7 @@ export default function PortfolioStudio() {
                 : 'text-zinc-500 hover:text-zinc-300'
             }`}
           >
-            <Plus className="w-3.5 h-3.5" /> Add New
+            <Plus className="w-3.5 h-3.5" /> {t.studioAddNew}
           </button>
           <button
             onClick={() => setMode('manage')}
@@ -597,7 +625,7 @@ export default function PortfolioStudio() {
                 : 'text-zinc-500 hover:text-zinc-300'
             }`}
           >
-            <PencilLine className="w-3.5 h-3.5" /> Manage ({entries.length})
+            <PencilLine className="w-3.5 h-3.5" /> {t.studioManage} ({num(entries.length)})
           </button>
           <button
             onClick={() => {
@@ -610,7 +638,7 @@ export default function PortfolioStudio() {
                 : 'text-zinc-500 hover:text-zinc-300'
             }`}
           >
-            <Compass className="w-3.5 h-3.5" /> Strategy
+            <Compass className="w-3.5 h-3.5" /> {t.studioStrategy}
           </button>
         </div>
       </header>
@@ -634,59 +662,59 @@ export default function PortfolioStudio() {
           <div className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <Field label="Project title *">
+                <Field label={`${t.fieldTitle} *`}>
                   <input
                     value={form.title}
                     onChange={(e) => patch({ title: e.target.value })}
-                    placeholder="Riverside Civic Spine"
+                    placeholder={t.fieldTitlePlaceholder}
                     className={inputClass}
                   />
                 </Field>
               </div>
 
-              <Field label="Category">
+              <Field label={t.fieldCategory}>
                 <select
                   value={form.category}
                   onChange={(e) => patch({ category: e.target.value })}
                   className={inputClass}
                 >
                   {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                    <option key={c.value} value={c.value}>
+                      {t[c.key]}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="Status / timeline">
+              <Field label={t.fieldStatus}>
                 <select
                   value={form.status}
                   onChange={(e) => patch({ status: e.target.value })}
                   className={inputClass}
                 >
                   {STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
+                    <option key={s.value} value={s.value}>
+                      {t[s.key]}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="Team role">
+              <Field label={t.fieldTeamRole}>
                 <select
                   value={form.teamRole}
                   onChange={(e) => patch({ teamRole: e.target.value })}
                   className={inputClass}
                 >
                   {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
+                    <option key={r.value} value={r.value}>
+                      {t[r.key]}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="Software stack" hint="Comma separated">
+              <Field label={t.fieldSoftware} hint={t.commaSeparated}>
                 <input
                   value={(form.softwareStack ?? []).join(', ')}
                   onChange={(e) =>
@@ -702,7 +730,7 @@ export default function PortfolioStudio() {
                 />
               </Field>
 
-              <Field label="Location">
+              <Field label={t.fieldLocation}>
                 <input
                   value={form.location}
                   onChange={(e) => patch({ location: e.target.value })}
@@ -710,20 +738,17 @@ export default function PortfolioStudio() {
                 />
               </Field>
 
-              <Field label="Area / scale">
+              <Field label={t.fieldArea}>
                 <input
                   value={form.area}
                   onChange={(e) => patch({ area: e.target.value })}
-                  placeholder="4,200 m²"
+                  placeholder="4,200 m²" dir="ltr"
                   className={inputClass}
                 />
               </Field>
 
               <div className="sm:col-span-2">
-                <Field
-                  label="Critical constraints"
-                  hint="The real conflict. This drives the whole case study."
-                >
+                <Field label={t.fieldConstraints} hint={t.fieldConstraintsHint}>
                   <textarea
                     rows={3}
                     value={form.constraints}
@@ -734,7 +759,7 @@ export default function PortfolioStudio() {
               </div>
 
               <div className="sm:col-span-2">
-                <Field label="Spatial notes">
+                <Field label={t.fieldSpatialNotes}>
                   <textarea
                     rows={3}
                     value={form.spatialNotes}
@@ -757,10 +782,10 @@ export default function PortfolioStudio() {
             >
               <Upload className="w-5 h-5 text-zinc-600 mx-auto mb-2" />
               <p className="text-xs text-zinc-500">
-                Drop renderings, photographs or PDF plans here
+                {t.dropzoneTitle}
               </p>
               <p className="text-[10px] text-zinc-700 mt-1">
-                Up to 4 MB each · PDFs are filed as technical drawings
+                {t.dropzoneHint}
               </p>
               <input
                 ref={fileRef}
@@ -823,9 +848,7 @@ export default function PortfolioStudio() {
               ) : (
                 <HelpCircle className="w-4 h-4" />
               )}
-              {questions.length > 0
-                ? 'Ask me different questions'
-                : 'Interrogate my evidence first'}
+              {questions.length > 0 ? t.interrogateAgain : t.interrogateButton}
             </button>
 
             <InterrogationPanel
@@ -846,7 +869,7 @@ export default function PortfolioStudio() {
               ) : (
                 <Sparkles className="w-4 h-4" />
               )}
-              {draft ? 'Refine with AI' : 'Generate & Synthesise with AI'}
+              {draft ? t.refine : t.synthesise}
             </button>
 
             <button
@@ -859,14 +882,14 @@ export default function PortfolioStudio() {
               ) : (
                 <GitCompare className="w-3.5 h-3.5" />
               )}
-              A/B two framings and score both
+              {t.variantsButton}
             </button>
           </div>
 
           {comparison && (
             <div className="space-y-3">
               <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-                Framing comparison
+                {t.variantsHeading}
               </h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 {comparison.variants.map((variant) => (
@@ -880,10 +903,10 @@ export default function PortfolioStudio() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs text-zinc-300 capitalize">
-                        {variant.stance}
+                        {stanceLabel(variant.stance, t)}
                       </h4>
                       <span className="text-sm tabular-nums text-amber-300">
-                        {variant.fitness.medianScore.toFixed(1)}
+                        {num(variant.fitness.medianScore, 1)}
                       </span>
                     </div>
                     {variant.project.identity.tagline && (
@@ -900,12 +923,12 @@ export default function PortfolioStudio() {
                         setFitness(variant.fitness);
                         setComparison(null);
                         setNotice(
-                          `Loaded the ${variant.stance} framing. Edit it below, then save.`,
+                          `${stanceLabel(variant.stance, t)} — ${t.variantsLoaded}`,
                         );
                       }}
                       className="w-full text-[11px] border border-zinc-800 hover:border-amber-600/60 text-zinc-400 hover:text-amber-300 rounded-lg py-1.5 transition"
                     >
-                      Continue with this one
+                      {t.variantsContinue}
                     </button>
                   </div>
                 ))}
@@ -940,7 +963,7 @@ export default function PortfolioStudio() {
                 ) : (
                   <Target className="w-3.5 h-3.5" />
                 )}
-                {fitness ? 'Re-score against live postings' : 'Score against live postings'}
+                {fitness ? t.fitnessRescore : t.fitnessButton}
               </button>
 
               {fitness && <FitnessPanel report={fitness} />}
@@ -955,13 +978,11 @@ export default function PortfolioStudio() {
                 ) : (
                   <Save className="w-4 h-4" />
                 )}
-                Save &amp; Auto-Embed
+                {t.saveAndEmbed}
               </button>
               <p className="text-[10px] text-zinc-700 text-center">
-                Writes <code>shared/portfolio_evidence.json</code>, upserts{' '}
-                <code>projects</code>, and regenerates the 768-dim vector in{' '}
-                <code>project_embeddings</code>.
-                {generator && ` Drafted by ${generator}.`}
+                {t.saveFootnote}
+                {generator && ` ${t.saveDraftedBy} ${generator}.`}
               </p>
             </>
           )}
@@ -970,9 +991,7 @@ export default function PortfolioStudio() {
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs text-zinc-500 max-w-md leading-relaxed">
-              Which capability keeps costing you near-miss postings. Read from
-              the Analyst's own rejections, so it reflects the market the Scout
-              is actually sweeping — not intuition.
+              {t.coverageIntro}
             </p>
             <button
               onClick={() => void loadCoverage()}
@@ -984,20 +1003,19 @@ export default function PortfolioStudio() {
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
-              Re-analyse
+              {t.coverageReanalyse}
             </button>
           </div>
 
           {coverageLoading && !coverage ? (
             <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" /> Reading near-miss
-              postings…
+              <Loader2 className="w-4 h-4 animate-spin" /> {t.coverageLoading}
             </div>
           ) : coverage ? (
             <CoveragePanel report={coverage} />
           ) : (
             <p className="text-sm text-zinc-500 text-center py-10">
-              No analysis yet.
+              {t.coverageNone}
             </p>
           )}
         </div>
@@ -1005,11 +1023,11 @@ export default function PortfolioStudio() {
         <div className="space-y-3">
           {listLoading ? (
             <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading projects…
+              <Loader2 className="w-4 h-4 animate-spin" /> {t.studioLoadingProjects}
             </div>
           ) : entries.length === 0 ? (
             <p className="text-sm text-zinc-500 text-center py-10">
-              No projects on file.
+              {t.studioNoProjects}
             </p>
           ) : (
             entries.map((entry) => (
@@ -1019,10 +1037,13 @@ export default function PortfolioStudio() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="text-sm text-zinc-200 font-medium truncate">
+                    <h3
+                      className="text-sm text-zinc-200 font-medium truncate"
+                      dir="auto"
+                    >
                       {entry.project.identity.title}
                     </h3>
-                    <p className="text-[11px] font-mono text-zinc-600">
+                    <p className="text-[11px] font-mono text-zinc-600" dir="ltr">
                       {entry.project.projectId} ·{' '}
                       {entry.project.identity.category}
                     </p>
@@ -1037,10 +1058,10 @@ export default function PortfolioStudio() {
                     }`}
                   >
                     {!entry.embedded
-                      ? 'not embedded'
+                      ? t.stateNotEmbedded
                       : entry.stale
-                        ? 'stale vector'
-                        : 'indexed'}
+                        ? t.stateStale
+                        : t.stateIndexed}
                   </span>
                 </div>
 
@@ -1055,7 +1076,7 @@ export default function PortfolioStudio() {
                     onClick={() => editExisting(entry)}
                     className="text-[11px] flex items-center gap-1.5 text-amber-400/80 hover:text-amber-300"
                   >
-                    <PencilLine className="w-3.5 h-3.5" /> Edit
+                    <PencilLine className="w-3.5 h-3.5" /> {t.edit}
                   </button>
                   <button
                     onClick={() => void reembed(entry.project.projectId)}
@@ -1067,14 +1088,14 @@ export default function PortfolioStudio() {
                     ) : (
                       <RefreshCw className="w-3.5 h-3.5" />
                     )}
-                    Re-embed
+                    {t.reembed}
                   </button>
                   <button
                     onClick={() => void remove(entry.project.projectId)}
                     disabled={busyId === entry.project.projectId}
                     className="text-[11px] flex items-center gap-1.5 text-zinc-600 hover:text-red-400 disabled:opacity-40 ml-auto"
                   >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                    <Trash2 className="w-3.5 h-3.5" /> {t.delete}
                   </button>
                 </div>
               </article>

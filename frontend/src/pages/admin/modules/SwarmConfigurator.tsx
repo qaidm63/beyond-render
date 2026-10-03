@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Save, AlertTriangle, Check, Play } from 'lucide-react';
+import { useLanguage } from '@/i18n';
 import { api, ApiError, type SweepReport } from '@/lib/api';
 import type { SearchConfiguration } from '@/types';
 
@@ -47,13 +48,14 @@ export default function SwarmConfigurator() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [report, setReport] = useState<SweepReport | null>(null);
+  const { t } = useLanguage();
 
   useEffect(() => {
     api
       .readConfig()
       .then(setConfig)
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : 'Failed to load config.'),
+        setError(err instanceof ApiError ? err.message : t.swarmLoadFailed),
       )
       .finally(() => setLoading(false));
   }, []);
@@ -71,7 +73,7 @@ export default function SwarmConfigurator() {
       setConfig(await api.writeConfig(config));
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Save failed.');
+      setError(err instanceof ApiError ? err.message : t.swarmSaveFailed);
     } finally {
       setSaving(false);
     }
@@ -84,7 +86,7 @@ export default function SwarmConfigurator() {
     try {
       setReport(await api.runScout(true));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Sweep failed.');
+      setError(err instanceof ApiError ? err.message : t.swarmSweepFailed);
     } finally {
       setSweeping(false);
     }
@@ -102,7 +104,7 @@ export default function SwarmConfigurator() {
     return (
       <div className="flex gap-2 text-xs text-red-300 bg-red-950/20 border border-red-900/40 rounded-lg p-3">
         <AlertTriangle className="w-4 h-4 shrink-0" />
-        <span>{error ?? 'Configuration unavailable.'}</span>
+        <span>{error ?? t.swarmConfigUnavailable}</span>
       </div>
     );
   }
@@ -110,9 +112,9 @@ export default function SwarmConfigurator() {
   return (
     <section className="space-y-6 max-w-3xl">
       <header>
-        <h2 className="text-white font-semibold">Swarm Configurator</h2>
+        <h2 className="text-white font-semibold">{t.swarmTitle}</h2>
         <p className="text-xs text-zinc-500">
-          Live control matrix. Writes to <code>agent_config</code>.
+          {t.swarmLiveMatrix} <code dir="ltr">agent_config</code>.
         </p>
       </header>
 
@@ -126,22 +128,22 @@ export default function SwarmConfigurator() {
       <div className="grid gap-6 sm:grid-cols-2">
         <fieldset className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
           <legend className="text-xs font-mono uppercase tracking-wider text-zinc-500 px-2">
-            Work Model
+            {t.swarmWorkModel}
           </legend>
           <Toggle
-            label="Remote worldwide"
+            label={t.workRemote}
             checked={config.workModel.remoteWorldwide}
             onChange={(v) =>
               patch({ workModel: { ...config.workModel, remoteWorldwide: v } })
             }
           />
           <Toggle
-            label="On site"
+            label={t.workOnSite}
             checked={config.workModel.onSite}
             onChange={(v) => patch({ workModel: { ...config.workModel, onSite: v } })}
           />
           <Toggle
-            label="Hybrid"
+            label={t.workHybrid}
             checked={config.workModel.hybrid}
             onChange={(v) => patch({ workModel: { ...config.workModel, hybrid: v } })}
           />
@@ -149,24 +151,24 @@ export default function SwarmConfigurator() {
 
         <fieldset className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
           <legend className="text-xs font-mono uppercase tracking-wider text-zinc-500 px-2">
-            Contract Type
+            {t.swarmContractType}
           </legend>
           <Toggle
-            label="Full time"
+            label={t.contractFullTime}
             checked={config.contractType.fullTime}
             onChange={(v) =>
               patch({ contractType: { ...config.contractType, fullTime: v } })
             }
           />
           <Toggle
-            label="Project based"
+            label={t.contractProject}
             checked={config.contractType.projectBased}
             onChange={(v) =>
               patch({ contractType: { ...config.contractType, projectBased: v } })
             }
           />
           <Toggle
-            label="Freelance"
+            label={t.contractFreelance}
             checked={config.contractType.freelance}
             onChange={(v) =>
               patch({ contractType: { ...config.contractType, freelance: v } })
@@ -178,7 +180,7 @@ export default function SwarmConfigurator() {
       <div className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
         <label className="block space-y-2">
           <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Target locations (comma separated)
+            {t.swarmTargetLocations}
           </span>
           <input
             value={config.targetLocations.join(', ')}
@@ -198,7 +200,7 @@ export default function SwarmConfigurator() {
       <div className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-5 space-y-3">
         <div className="flex items-baseline justify-between">
           <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Fit Score threshold
+            {t.swarmThreshold}
           </span>
           <span className="text-2xl font-mono text-amber-400">
             {config.matchingThreshold}
@@ -213,8 +215,7 @@ export default function SwarmConfigurator() {
           className="w-full accent-amber-500"
         />
         <p className="text-[11px] text-zinc-600 leading-relaxed">
-          Jobs scoring below this never reach the Radar. Lower it to widen the
-          net and raise LLM cost; raise it to keep only near-exact matches.
+          {t.swarmThresholdHint}
         </p>
       </div>
 
@@ -231,7 +232,7 @@ export default function SwarmConfigurator() {
           ) : (
             <Save className="w-4 h-4" />
           )}
-          {saved ? 'Saved' : 'Save configuration'}
+          {saved ? t.swarmSaved : t.swarmSave}
         </button>
 
         <button
@@ -244,21 +245,21 @@ export default function SwarmConfigurator() {
           ) : (
             <Play className="w-4 h-4" />
           )}
-          Run sweep now
+          {t.swarmRunSweep}
         </button>
       </div>
 
       {report && (
         <div className="border border-zinc-800 bg-black/40 rounded-2xl p-5 space-y-2">
           <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Last sweep
+            {t.swarmLastSweep}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             {[
-              ['Raw', report.raw_count],
-              ['Deduped', report.deduped_count],
-              ['Accepted', report.accepted_count],
-              ['Persisted', report.persisted_count],
+              [t.swarmRaw, report.raw_count],
+              [t.telemetryDeduped, report.deduped_count],
+              [t.telemetryAccepted, report.accepted_count],
+              [t.telemetryPersisted, report.persisted_count],
             ].map(([label, value]) => (
               <div key={String(label)}>
                 <p className="text-[10px] uppercase font-mono text-zinc-600">

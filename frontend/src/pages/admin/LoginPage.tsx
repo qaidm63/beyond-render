@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { LanguageToggle, useLanguage } from '@/i18n';
 
 /**
  * Operator sign-in. Credentials go straight to Supabase Auth — this app
@@ -11,6 +12,7 @@ export default function LoginPage({ notice }: { notice?: string }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t, dir } = useLanguage();
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -29,15 +31,21 @@ export default function LoginPage({ notice }: { notice?: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#07080c] flex items-center justify-center px-6">
+    <div
+      className="min-h-screen bg-[#07080c] flex items-center justify-center px-6"
+      dir={dir}
+    >
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm space-y-5 border border-zinc-800 bg-zinc-950/60 rounded-2xl p-8"
       >
         <div className="space-y-2">
-          <KeyRound className="w-7 h-7 text-amber-400" />
-          <h1 className="text-xl font-semibold text-white">Command Center</h1>
-          <p className="text-xs text-zinc-500">Operator access only.</p>
+          <div className="flex items-start justify-between">
+            <KeyRound className="w-7 h-7 text-amber-400" />
+            <LanguageToggle />
+          </div>
+          <h1 className="text-xl font-semibold text-white">{t.commandCenter}</h1>
+          <p className="text-xs text-zinc-500">{t.operatorAccessOnly}</p>
         </div>
 
         {notice && (
@@ -49,10 +57,11 @@ export default function LoginPage({ notice }: { notice?: string }) {
 
         <label className="block space-y-1.5">
           <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Email
+            {t.email}
           </span>
           <input
             type="email"
+            dir="ltr"
             required
             autoComplete="username"
             value={email}
@@ -63,10 +72,11 @@ export default function LoginPage({ notice }: { notice?: string }) {
 
         <label className="block space-y-1.5">
           <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">
-            Password
+            {t.password}
           </span>
           <input
             type="password"
+            dir="ltr"
             required
             autoComplete="current-password"
             value={password}
@@ -83,7 +93,7 @@ export default function LoginPage({ notice }: { notice?: string }) {
           className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-semibold text-sm rounded-lg py-2.5 transition"
         >
           {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-          Sign in
+          {t.signIn}
         </button>
       </form>
     </div>

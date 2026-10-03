@@ -17,6 +17,11 @@ import './index.css';
 const VipPitchPage = lazy(() => import('@/pages/pitch/VipPitchPage'));
 const CommandCenter = lazy(() => import('@/pages/admin/CommandCenter'));
 const ProtectedRoute = lazy(() => import('@/pages/admin/ProtectedRoute'));
+// Only the console is wrapped: the public portfolio manages its own
+// language in component state and must not inherit the operator's choice.
+const LanguageProvider = lazy(() =>
+  import('@/i18n').then((m) => ({ default: m.LanguageProvider })),
+);
 
 function RouteFallback() {
   return (
@@ -36,9 +41,11 @@ createRoot(document.getElementById('root')!).render(
           <Route
             path="/matrix-admin"
             element={
-              <ProtectedRoute>
-                <CommandCenter />
-              </ProtectedRoute>
+              <LanguageProvider>
+                <ProtectedRoute>
+                  <CommandCenter />
+                </ProtectedRoute>
+              </LanguageProvider>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

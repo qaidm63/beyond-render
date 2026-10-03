@@ -6,6 +6,7 @@ import {
   HelpCircle,
   FileText,
 } from 'lucide-react';
+import { useLanguage } from '@/i18n';
 import type {
   AssetFacts,
   CoverageReport,
@@ -23,14 +24,13 @@ import type {
  * switched off, so findings are surfaced for confirmation instead.
  */
 export function ProvenancePanel({ report }: { report: ProvenanceReport }) {
+  const { t, num } = useLanguage();
+
   if (report.clean) {
     return (
       <div className="flex items-center gap-2 text-xs text-emerald-300/90 bg-emerald-950/15 border border-emerald-900/40 rounded-xl px-3 py-2.5">
         <ShieldCheck className="w-4 h-4 shrink-0" />
-        <span>
-          Provenance clean — every figure and credential in this draft traces
-          back to something you supplied.
-        </span>
+        <span>{t.provenanceClean}</span>
       </div>
     );
   }
@@ -41,16 +41,23 @@ export function ProvenancePanel({ report }: { report: ProvenanceReport }) {
         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
         <h4 className="text-xs font-medium text-amber-200">
           {report.criticalCount > 0
-            ? `${report.criticalCount} unverified credential${report.criticalCount > 1 ? 's' : ''}`
-            : 'Unverified figures'}
+            ? `${num(report.criticalCount)} ${
+                report.criticalCount > 1
+                  ? t.provenanceCredentialsPlural
+                  : t.provenanceCredentials
+              }`
+            : t.provenanceFigures}
           {report.warningCount > 0 && report.criticalCount > 0
-            ? ` · ${report.warningCount} figure${report.warningCount > 1 ? 's' : ''}`
+            ? ` · ${num(report.warningCount)} ${
+                report.warningCount > 1
+                  ? t.provenanceFigureWordPlural
+                  : t.provenanceFigureWord
+              }`
             : ''}
         </h4>
       </div>
       <p className="text-[10px] text-zinc-500">
-        These appear in the draft but not in your inputs. Confirm each against
-        your own records, or edit it out. Saving is not blocked.
+        {t.provenanceIntro}
       </p>
       <ul className="space-y-2">
         {report.findings.map((finding, i) => (
@@ -86,6 +93,8 @@ function scoreColour(score: number, threshold: number): string {
 }
 
 export function FitnessPanel({ report }: { report: FitnessReport }) {
+  const { t, num } = useLanguage();
+
   if (report.note && report.sampleSize === 0) {
     return (
       <div className="border border-zinc-800 bg-zinc-950/40 rounded-xl p-4 text-xs text-zinc-500">
@@ -101,7 +110,7 @@ export function FitnessPanel({ report }: { report: FitnessReport }) {
       <div className="flex items-center gap-2">
         <Target className="w-4 h-4 text-amber-400/80" />
         <h4 className="text-xs font-medium text-zinc-300">
-          Match against live postings
+          {t.fitnessTitle}
         </h4>
         <span className="text-[10px] font-mono text-zinc-600 ml-auto">
           n={report.sampleSize}
@@ -116,36 +125,38 @@ export function FitnessPanel({ report }: { report: FitnessReport }) {
               report.threshold,
             )}`}
           >
-            {report.medianScore.toFixed(1)}
+            {num(report.medianScore, 1)}
           </p>
-          <p className="text-[10px] text-zinc-600 mt-0.5">median score</p>
+          <p className="text-[10px] text-zinc-600 mt-0.5">{t.fitnessMedian}</p>
         </div>
         <div className="text-[11px] text-zinc-500 space-y-0.5 pb-1">
           <p>
-            Best:{' '}
+            {t.fitnessBest}:{' '}
             <span className="text-zinc-300 tabular-nums">
-              {report.bestScore.toFixed(1)}
+              {num(report.bestScore, 1)}
             </span>
           </p>
           <p>
-            Clears the {report.threshold.toFixed(0)} threshold on{' '}
+            {t.fitnessClears} {num(report.threshold)} {t.fitnessThresholdOn}{' '}
             <span className="text-zinc-300 tabular-nums">
-              {report.wouldPassCount}
+              {num(report.wouldPassCount)}
             </span>{' '}
-            of {report.sampleSize}
+            {t.fitnessOf} {num(report.sampleSize)}
           </p>
         </div>
       </div>
 
       {/* Threshold marker: the only number that decides acceptance. */}
+      {/* Logical insets: a physical `left` would keep the bar filling from
+          the left in Arabic, reading as a shrinking score. */}
       <div className="relative h-1.5 bg-zinc-900 rounded-full overflow-hidden">
         <div
-          className="absolute inset-y-0 left-0 bg-amber-500/60 rounded-full"
-          style={{ width: `${pct}%` }}
+          className="absolute inset-y-0 bg-amber-500/60 rounded-full"
+          style={{ insetInlineStart: 0, width: `${pct}%` }}
         />
         <div
           className="absolute inset-y-0 w-px bg-emerald-400/80"
-          style={{ left: `${report.threshold}%` }}
+          style={{ insetInlineStart: `${report.threshold}%` }}
         />
       </div>
 
@@ -162,7 +173,7 @@ export function FitnessPanel({ report }: { report: FitnessReport }) {
                   report.threshold,
                 )}`}
               >
-                {match.fitScore.toFixed(0)}
+                {num(match.fitScore)}
               </span>
               <span className="text-zinc-400 truncate">{match.title}</span>
               <span className="text-zinc-600 truncate">· {match.company}</span>
@@ -173,7 +184,7 @@ export function FitnessPanel({ report }: { report: FitnessReport }) {
                   }`}
                 >
                   {match.delta > 0 ? '+' : ''}
-                  {match.delta.toFixed(1)}
+                  {num(match.delta, 1)}
                 </span>
               )}
             </li>
@@ -182,8 +193,8 @@ export function FitnessPanel({ report }: { report: FitnessReport }) {
       )}
 
       <p className="text-[10px] text-zinc-700">
-        Scored with {report.model}. The delta column compares this draft to the
-        score each posting currently has.
+        {t.fitnessScoredWith} <span dir="ltr">{report.model}</span>.{' '}
+        {t.fitnessDeltaNote}
       </p>
     </div>
   );
@@ -200,6 +211,8 @@ const PRIORITY_STYLES: Record<string, string> = {
 };
 
 export function CoveragePanel({ report }: { report: CoverageReport }) {
+  const { t, num } = useLanguage();
+
   if (report.note) {
     return (
       <div className="border border-zinc-800 bg-zinc-950/40 rounded-xl p-4 text-xs text-zinc-500">
@@ -216,11 +229,14 @@ export function CoveragePanel({ report }: { report: CoverageReport }) {
             {report.summary}
           </p>
           <p className="text-[10px] text-zinc-600 mt-2">
-            From {report.sampleSize} near-miss postings
+            {t.coverageFrom} {num(report.sampleSize)} {t.coverageNearMiss}
             {report.scoreRange
-              ? ` scoring ${report.scoreRange[0]}–${report.scoreRange[1]}`
+              ? ` · ${t.coverageScoring} ${num(report.scoreRange[0], 1)}–${num(
+                  report.scoreRange[1],
+                  1,
+                )}`
               : ''}{' '}
-            against a threshold of {report.threshold.toFixed(0)}.
+            · {t.coverageAgainstThreshold} {num(report.threshold)}.
           </p>
         </div>
       )}
@@ -235,8 +251,8 @@ export function CoveragePanel({ report }: { report: CoverageReport }) {
             <div className="min-w-0 flex-1">
               <h4 className="text-sm text-zinc-200">{gap.capability}</h4>
               <p className="text-[11px] text-zinc-600 mt-0.5">
-                demanded by {gap.demandCount} posting
-                {gap.demandCount === 1 ? '' : 's'}
+                {t.coverageDemandedBy} {num(gap.demandCount)}{' '}
+                {gap.demandCount === 1 ? t.coveragePosting : t.coveragePostingPlural}
               </p>
             </div>
             <span
@@ -244,7 +260,11 @@ export function CoveragePanel({ report }: { report: CoverageReport }) {
                 PRIORITY_STYLES[gap.priority] ?? PRIORITY_STYLES.low
               }`}
             >
-              {gap.priority}
+              {gap.priority === 'high'
+                ? t.priorityHigh
+                : gap.priority === 'low'
+                  ? t.priorityLow
+                  : t.priorityMedium}
             </span>
           </div>
 
@@ -257,7 +277,7 @@ export function CoveragePanel({ report }: { report: CoverageReport }) {
           {gap.recommendedProject && (
             <div className="pl-7">
               <p className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 mb-1">
-                Build this next
+                {t.coverageBuildNext}
               </p>
               <p className="text-[11px] text-emerald-200/80 leading-relaxed">
                 {gap.recommendedProject}
@@ -283,6 +303,8 @@ export function InterrogationPanel({
   answers: Record<string, string>;
   onAnswer: (id: string, value: string) => void;
 }) {
+  const { t, num } = useLanguage();
+
   if (questions.length === 0) return null;
 
   return (
@@ -290,14 +312,14 @@ export function InterrogationPanel({
       <div className="flex items-center gap-2">
         <HelpCircle className="w-4 h-4 text-sky-400/80" />
         <h4 className="text-xs font-medium text-sky-200">
-          Before writing — {questions.length} question
-          {questions.length === 1 ? '' : 's'}
+          {t.interrogateHeading} — {num(questions.length)}{' '}
+          {questions.length === 1
+            ? t.interrogateQuestionWord
+            : t.interrogateQuestionWordPlural}
         </h4>
       </div>
       <p className="text-[10px] text-zinc-500">
-        Answer in your own words, however roughly. These answers become
-        authoritative facts in the brief, so the model reasons from your
-        decisions instead of guessing at them. Skip any that do not apply.
+        {t.interrogateIntro}
       </p>
 
       {questions.map((question) => (
@@ -312,7 +334,7 @@ export function InterrogationPanel({
             rows={2}
             value={answers[question.id] ?? ''}
             onChange={(e) => onAnswer(question.id, e.target.value)}
-            placeholder="Your answer…"
+            placeholder={t.interrogateAnswerPlaceholder}
             className="w-full bg-black/40 border border-zinc-800 focus:border-sky-600/60 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none transition"
           />
         </div>
@@ -326,6 +348,8 @@ export function InterrogationPanel({
 /* ------------------------------------------------------------------ */
 
 export function AssetFactsPanel({ facts }: { facts: AssetFacts[] }) {
+  const { t, num } = useLanguage();
+
   if (facts.length === 0) return null;
 
   return (
@@ -333,28 +357,36 @@ export function AssetFactsPanel({ facts }: { facts: AssetFacts[] }) {
       <div className="flex items-center gap-2">
         <FileText className="w-3.5 h-3.5 text-zinc-600" />
         <h4 className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">
-          Measured from your files
+          {t.measuredTitle}
         </h4>
       </div>
       <ul className="space-y-0.5">
         {facts.map((fact, i) => (
           <li key={i} className="text-[11px] text-zinc-500">
             {[
-              fact.pageCount ? `${fact.pageCount}-page PDF` : null,
-              fact.sheetSize ? `${fact.sheetSize} sheet` : null,
-              fact.pixelWidth && fact.pixelHeight
-                ? `${fact.pixelWidth}×${fact.pixelHeight}`
+              fact.pageCount
+                ? `${num(fact.pageCount)} ${t.measuredPages}`
                 : null,
-              fact.orientation,
-              fact.producer ? `from ${fact.producer}` : null,
+              fact.sheetSize ? `${fact.sheetSize} ${t.measuredSheet}` : null,
+              fact.pixelWidth && fact.pixelHeight
+                ? `${num(fact.pixelWidth)}×${num(fact.pixelHeight)}`
+                : null,
+              fact.orientation === 'landscape'
+                ? t.orientLandscape
+                : fact.orientation === 'portrait'
+                  ? t.orientPortrait
+                  : fact.orientation === 'square'
+                    ? t.orientSquare
+                    : null,
+              fact.producer ? `${t.measuredFrom} ${fact.producer}` : null,
             ]
               .filter(Boolean)
-              .join(' · ') || 'unreadable'}
+              .join(' · ') || t.measuredUnreadable}
           </li>
         ))}
       </ul>
       <p className="text-[10px] text-zinc-700">
-        Measurements, not interpretations — the model treats these as fact.
+        {t.measuredNote}
       </p>
     </div>
   );

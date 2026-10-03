@@ -10,6 +10,7 @@ import {
   Save,
   Undo2,
 } from 'lucide-react';
+import { useLanguage } from '@/i18n';
 import { api, ApiError, type PitchRow } from '@/lib/api';
 
 /** Dynamic Pitch Studio — Blueprint § 5.3. */
@@ -21,6 +22,7 @@ export default function PitchStudio() {
   const [copied, setCopied] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftText, setDraftText] = useState('');
+  const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -29,7 +31,7 @@ export default function PitchStudio() {
     try {
       setPitches(await api.listPitches());
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load pitches.');
+      setError(err instanceof ApiError ? err.message : t.pitchLoadFailed);
     } finally {
       setLoading(false);
     }
@@ -50,7 +52,7 @@ export default function PitchStudio() {
       await api.approvePitch(pitch.company_id, !pitch.approved);
     } catch {
       setPitches(previous);
-      setError('Could not change approval — reverted.');
+      setError(t.pitchApprovalFailed);
     }
   }
 
@@ -91,7 +93,7 @@ export default function PitchStudio() {
       setError(
         err instanceof ApiError
           ? `Could not save: ${err.message}`
-          : 'Could not save the letter.',
+          : t.pitchSaveFailed,
       );
     } finally {
       setSaving(false);
@@ -108,10 +110,9 @@ export default function PitchStudio() {
   return (
     <section className="space-y-4 max-w-4xl">
       <header>
-        <h2 className="text-white font-semibold">Dynamic Pitch Studio</h2>
+        <h2 className="text-white font-semibold">{t.pitchTitle}</h2>
         <p className="text-xs text-zinc-500">
-          Review, edit and approve cover letters, then mint VIP links.
-          Unapproved pitches return 404 publicly — a draft can never leak.
+          {t.pitchIntro}
         </p>
       </header>
 
@@ -124,13 +125,13 @@ export default function PitchStudio() {
 
       {loading ? (
         <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading pitches…
+          <Loader2 className="w-4 h-4 animate-spin" /> {t.pitchLoading}
         </div>
       ) : pitches.length === 0 ? (
         <div className="border border-dashed border-zinc-800 rounded-2xl p-10 text-center space-y-2">
-          <p className="text-sm text-zinc-500">No pitches yet.</p>
+          <p className="text-sm text-zinc-500">{t.pitchNone}</p>
           <p className="text-xs text-zinc-600">
-            The Tailor Agent generates these in Phase 4 from high-match jobs.
+            {t.pitchNoneHint}
           </p>
         </div>
       ) : (
@@ -144,7 +145,7 @@ export default function PitchStudio() {
                 <div>
                   <h3 className="text-zinc-200 font-medium">{pitch.company_name}</h3>
                   <p className="text-[11px] font-mono text-zinc-600">
-                    /vip/{pitch.company_id} · {pitch.view_count} views
+                    /vip/{pitch.company_id} · {pitch.view_count} {t.pitchViews}
                   </p>
                 </div>
                 <span
@@ -178,7 +179,7 @@ export default function PitchStudio() {
                       ) : (
                         <Save className="w-3.5 h-3.5" />
                       )}
-                      Save letter
+                      {t.pitchSaveLetter}
                     </button>
                     <button
                       onClick={cancelEditing}
@@ -224,11 +225,11 @@ export default function PitchStudio() {
                 >
                   {pitch.approved ? (
                     <>
-                      <X className="w-3.5 h-3.5" /> Unpublish
+                      <X className="w-3.5 h-3.5" /> {t.pitchUnpublish}
                     </>
                   ) : (
                     <>
-                      <Check className="w-3.5 h-3.5" /> Approve &amp; publish
+                      <Check className="w-3.5 h-3.5" /> {t.pitchApprove}
                     </>
                   )}
                 </button>
@@ -237,7 +238,7 @@ export default function PitchStudio() {
                   disabled={editingId === pitch.company_id}
                   className="text-xs flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-40"
                 >
-                  <Pencil className="w-3.5 h-3.5" /> Edit letter
+                  <Pencil className="w-3.5 h-3.5" /> {t.pitchEditLetter}
                 </button>
                 <button
                   onClick={() => copyLink(pitch.company_id)}
@@ -245,11 +246,11 @@ export default function PitchStudio() {
                 >
                   {copied === pitch.company_id ? (
                     <>
-                      <Check className="w-3.5 h-3.5" /> Copied
+                      <Check className="w-3.5 h-3.5" /> {t.pitchCopied}
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3.5 h-3.5" /> Copy VIP link
+                      <Copy className="w-3.5 h-3.5" /> {t.pitchCopyLink}
                     </>
                   )}
                 </button>

@@ -8,6 +8,7 @@ import {
   Radar as RadarIcon,
   KeyRound,
 } from 'lucide-react';
+import { useLanguage, type AdminDictionary } from '@/i18n';
 import {
   api,
   ApiError,
@@ -18,14 +19,18 @@ import {
 
 /** Telemetry — Blueprint § 5.4: match stats and recruiter clicks. */
 
-const METRICS: { key: string; label: string; hint: string }[] = [
-  { key: 'totalDiscovered', label: 'Discovered', hint: 'All scouted postings' },
-  { key: 'totalHighMatch', label: 'High match', hint: 'Passed the gatekeeper' },
-  { key: 'totalReadyToApply', label: 'Ready', hint: 'Pitch approved' },
-  { key: 'totalApplied', label: 'Applied', hint: 'Submitted' },
-  { key: 'averageFitScore', label: 'Avg fit score', hint: 'Across scored jobs' },
-  { key: 'recruiterClicks', label: 'Recruiter views', hint: 'VIP page opens' },
-  { key: 'totalPitches', label: 'Pitches', hint: 'Generated' },
+const METRICS: {
+  key: string;
+  label: keyof AdminDictionary;
+  hint: keyof AdminDictionary;
+}[] = [
+  { key: 'totalDiscovered', label: 'telemetryDiscovered', hint: 'telemetryAllPostings' },
+  { key: 'totalHighMatch', label: 'stageHighMatch', hint: 'hintHighMatch' },
+  { key: 'totalReadyToApply', label: 'telemetryReady', hint: 'hintReady' },
+  { key: 'totalApplied', label: 'telemetryApplied', hint: 'hintApplied' },
+  { key: 'averageFitScore', label: 'telemetryAvgFit', hint: 'telemetryAcrossScored' },
+  { key: 'recruiterClicks', label: 'telemetryViews', hint: 'telemetryVipOpens' },
+  { key: 'totalPitches', label: 'telemetryPitches', hint: 'telemetryGenerated' },
 ];
 
 export default function Telemetry() {
@@ -38,6 +43,7 @@ export default function Telemetry() {
   const [sweeping, setSweeping] = useState(false);
   const [alerting, setAlerting] = useState(false);
   const [opsNotice, setOpsNotice] = useState<string | null>(null);
+  const { t } = useLanguage();
   const [keyring, setKeyring] = useState<KeyringState | null>(null);
 
   useEffect(() => {
@@ -45,7 +51,7 @@ export default function Telemetry() {
       .telemetry()
       .then((d) => setData(d as Record<string, number>))
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : 'Failed to load telemetry.'),
+        setError(err instanceof ApiError ? err.message : t.telemetryLoadFailed),
       )
       .finally(() => setLoading(false));
 
@@ -68,7 +74,7 @@ export default function Telemetry() {
       );
       setScheduler(await api.scheduler());
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Sweep failed.');
+      setError(err instanceof ApiError ? err.message : t.swarmSweepFailed);
     } finally {
       setSweeping(false);
     }
@@ -82,12 +88,11 @@ export default function Telemetry() {
       const result = await api.testAlert();
       setOpsNotice(
         result.delivered
-          ? 'Telegram alert delivered — check your chat.'
-          : 'Telegram is configured but the message was rejected. Verify the ' +
-            'bot token and that you have sent /start to the bot.',
+          ? t.swarmTelegramOk
+          : t.swarmTelegramRejected,
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Alert test failed.');
+      setError(err instanceof ApiError ? err.message : t.swarmAlertFailed);
     } finally {
       setAlerting(false);
     }
@@ -100,7 +105,7 @@ export default function Telemetry() {
     try {
       setIngestReport(await api.runIngest(false));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Ingestion failed.');
+      setError(err instanceof ApiError ? err.message : t.swarmIngestFailed);
     } finally {
       setIngesting(false);
     }
@@ -109,8 +114,8 @@ export default function Telemetry() {
   return (
     <section className="space-y-5 max-w-4xl">
       <header>
-        <h2 className="text-white font-semibold">Telemetry</h2>
-        <p className="text-xs text-zinc-500">Pipeline conversion and engagement.</p>
+        <h2 className="text-white font-semibold">{t.telemetryTitle}</h2>
+        <p className="text-xs text-zinc-500">{t.telemetrySubtitle}</p>
       </header>
 
       {error && (
@@ -132,12 +137,12 @@ export default function Telemetry() {
               className="border border-zinc-800 bg-zinc-950/40 rounded-2xl p-4 space-y-1"
             >
               <p className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
-                {metric.label}
+                {t[metric.label]}
               </p>
               <p className="text-2xl font-mono text-amber-400">
                 {data?.[metric.key] ?? 0}
               </p>
-              <p className="text-[10px] text-zinc-700">{metric.hint}</p>
+              <p className="text-[10px] text-zinc-700">{t[metric.hint]}</p>
             </div>
           ))}
         </div>
@@ -179,7 +184,7 @@ export default function Telemetry() {
         </h3>
 
         <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono">
-          <span className="text-zinc-600">Scheduler</span>
+          <span className="text-zinc-600">{t.swarmScheduler}</span>
           <span className={scheduler?.enabled ? 'text-emerald-400' : 'text-zinc-500'}>
             {scheduler
               ? scheduler.enabled
@@ -188,7 +193,7 @@ export default function Telemetry() {
               : 'unknown'}
           </span>
 
-          <span className="text-zinc-600">Telegram</span>
+          <span className="text-zinc-600">{t.swarmTelegram}</span>
           <span
             className={
               scheduler?.telegramConfigured ? 'text-emerald-400' : 'text-amber-400'
@@ -197,12 +202,12 @@ export default function Telemetry() {
             {scheduler?.telegramConfigured ? 'configured' : 'not configured'}
           </span>
 
-          <span className="text-zinc-600">Runs / failures</span>
+          <span className="text-zinc-600">{t.telemetryRuns}</span>
           <span className="text-zinc-400">
             {scheduler?.runCount ?? 0} / {scheduler?.failureCount ?? 0}
           </span>
 
-          <span className="text-zinc-600">Last finished</span>
+          <span className="text-zinc-600">{t.telemetryLastFinished}</span>
           <span className="text-zinc-400">
             {scheduler?.lastFinishedAt
               ? new Date(scheduler.lastFinishedAt).toLocaleString()
@@ -270,10 +275,10 @@ export default function Telemetry() {
         </div>
 
         {!keyring ? (
-          <p className="text-[11px] text-zinc-600">Unavailable.</p>
+          <p className="text-[11px] text-zinc-600">{t.unavailable}</p>
         ) : !keyring.configured ? (
           <p className="text-[11px] text-zinc-600 leading-relaxed">
-            {keyring.detail ?? 'No rotating keys configured.'}
+            {keyring.detail ?? t.swarmNoKeys}
           </p>
         ) : (
           <>
@@ -311,11 +316,11 @@ export default function Telemetry() {
 
             {keyring.models && (
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-mono pt-1">
-                <span className="text-zinc-600">Vision / DOM</span>
+                <span className="text-zinc-600">{t.swarmVisionDom}</span>
                 <span className="text-zinc-400">{keyring.models.vision}</span>
-                <span className="text-zinc-600">Analyst filter</span>
+                <span className="text-zinc-600">{t.swarmAnalystFilter}</span>
                 <span className="text-zinc-400">{keyring.models.analyst}</span>
-                <span className="text-zinc-600">Tailor</span>
+                <span className="text-zinc-600">{t.swarmTailor}</span>
                 <span className="text-zinc-400">{keyring.models.tailor}</span>
               </div>
             )}

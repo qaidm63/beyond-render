@@ -6,16 +6,21 @@ import {
   RefreshCw,
   PenLine,
 } from 'lucide-react';
+import { useLanguage, type AdminDictionary } from '@/i18n';
 import { api, ApiError, type JobRow } from '@/lib/api';
 import type { PipelineStage } from '@/types';
 
 /** The Radar — Blueprint § 5.1: Scout Pipeline Kanban. */
 
-const COLUMNS: { stage: PipelineStage; label: string; hint: string }[] = [
-  { stage: 'discovered', label: 'Discovered', hint: 'Below threshold or unscored' },
-  { stage: 'high_match', label: 'High Match', hint: 'Passed the gatekeeper' },
-  { stage: 'ready_to_apply', label: 'Ready to Apply', hint: 'Pitch approved' },
-  { stage: 'applied', label: 'Applied', hint: 'Submitted' },
+const COLUMNS: {
+  stage: PipelineStage;
+  label: keyof AdminDictionary;
+  hint: keyof AdminDictionary;
+}[] = [
+  { stage: 'discovered', label: 'stageDiscovered', hint: 'hintDiscovered' },
+  { stage: 'high_match', label: 'stageHighMatch', hint: 'hintHighMatch' },
+  { stage: 'ready_to_apply', label: 'stageReady', hint: 'hintReady' },
+  { stage: 'applied', label: 'stageApplied', hint: 'hintApplied' },
 ];
 
 const NEXT_STAGE: Partial<Record<PipelineStage, PipelineStage>> = {
@@ -44,6 +49,7 @@ function JobCard({
   busy: boolean;
   drafting: boolean;
 }) {
+  const { t, isRtl } = useLanguage();
   const next = NEXT_STAGE[job.stage];
   // Drafting is only offered once the gatekeeper has cleared the job: an LLM
   // call per below-threshold posting is exactly the cost the gate prevents.
@@ -51,7 +57,10 @@ function JobCard({
   return (
     <article className="border border-zinc-800 bg-black/40 rounded-xl p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm text-zinc-200 font-medium leading-snug">
+        <h4
+          className="text-sm text-zinc-200 font-medium leading-snug"
+          dir="auto"
+        >
           {job.title}
         </h4>
         <span
@@ -63,7 +72,9 @@ function JobCard({
         </span>
       </div>
 
-      <p className="text-xs text-zinc-500">{job.company}</p>
+      <p className="text-xs text-zinc-500" dir="auto">
+        {job.company}
+      </p>
       {job.location && (
         <p className="text-[11px] text-zinc-600">{job.location}</p>
       )}
@@ -76,7 +87,7 @@ function JobCard({
       </div>
 
       {job.best_project_id && (
-        <p className="text-[10px] text-amber-400/60 font-mono">
+        <p className="text-[10px] text-amber-400/60 font-mono" dir="ltr">
           ↳ {job.best_project_id}
         </p>
       )}
@@ -88,7 +99,7 @@ function JobCard({
           rel="noreferrer noopener"
           className="text-[11px] text-zinc-500 hover:text-amber-400 flex items-center gap-1"
         >
-          Open <ExternalLink className="w-3 h-3" />
+          {t.open} <ExternalLink className="w-3 h-3" />
         </a>
         {next && (
           <button
@@ -96,14 +107,14 @@ function JobCard({
             onClick={() => onMove(job, next)}
             className="text-[11px] text-amber-400/80 hover:text-amber-300 disabled:opacity-40"
           >
-            Advance →
+            {t.radarAdvance} {isRtl ? '←' : '→'}
           </button>
         )}
         {canDraft && (
           <button
             disabled={drafting}
             onClick={() => onDraft(job)}
-            title="Draft a tailored cover letter with the Tailor Agent"
+            title={t.radarDraftTitle}
             className="text-[11px] text-sky-400/80 hover:text-sky-300 disabled:opacity-40 flex items-center gap-1 ml-auto"
           >
             {drafting ? (
@@ -111,7 +122,7 @@ function JobCard({
             ) : (
               <PenLine className="w-3 h-3" />
             )}
-            Draft
+            {t.radarDraft}
           </button>
         )}
       </div>
@@ -126,6 +137,7 @@ export default function Radar() {
   const [movingId, setMovingId] = useState<string | null>(null);
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const { t, num } = useLanguage();
 
   async function load() {
     setLoading(true);
@@ -136,7 +148,7 @@ export default function Radar() {
       setError(
         err instanceof ApiError
           ? `${err.message} (HTTP ${err.status})`
-          : 'Failed to load the pipeline.',
+          : t.radarLoadFailed,
       );
     } finally {
       setLoading(false);
@@ -158,7 +170,7 @@ export default function Radar() {
       await api.moveJob(job.id, stage);
     } catch {
       setJobs(previous);
-      setError('Could not move that card — change reverted.');
+      setError(t.radarMoveFailed);
     } finally {
       setMovingId(null);
     }
@@ -179,7 +191,7 @@ export default function Radar() {
       setError(
         err instanceof ApiError
           ? `Drafting failed: ${err.message} (HTTP ${err.status})`
-          : 'Drafting failed.',
+          : t.radarDraftFailed,
       );
     } finally {
       setDraftingId(null);
@@ -190,15 +202,17 @@ export default function Radar() {
     <section className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-white font-semibold">The Radar</h2>
-          <p className="text-xs text-zinc-500">Scout pipeline · {jobs.length} records</p>
+          <h2 className="text-white font-semibold">{t.radarTitle}</h2>
+          <p className="text-xs text-zinc-500">
+            {t.radarSubtitle} · {num(jobs.length)} {t.radarRecords}
+          </p>
         </div>
         <button
           onClick={() => void load()}
           className="text-xs text-zinc-400 hover:text-amber-400 flex items-center gap-1.5"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t.refresh}
         </button>
       </header>
 
@@ -218,7 +232,7 @@ export default function Radar() {
 
       {loading && jobs.length === 0 ? (
         <div className="flex items-center gap-2 text-zinc-500 text-sm py-10 justify-center">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading pipeline…
+          <Loader2 className="w-4 h-4 animate-spin" /> {t.radarLoading}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -232,16 +246,16 @@ export default function Radar() {
                 <div className="space-y-0.5">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-                      {column.label}
+                      {t[column.label]}
                     </h3>
-                    <span className="text-[10px] text-zinc-600">{items.length}</span>
+                    <span className="text-[10px] text-zinc-600">{num(items.length)}</span>
                   </div>
-                  <p className="text-[10px] text-zinc-700">{column.hint}</p>
+                  <p className="text-[10px] text-zinc-700">{t[column.hint]}</p>
                 </div>
 
                 {items.length === 0 ? (
                   <p className="text-[11px] text-zinc-700 italic py-4 text-center">
-                    Empty
+                    {t.empty}
                   </p>
                 ) : (
                   items.map((job) => (
